@@ -1,0 +1,122 @@
+[project]
+name = "affex"
+version = "0.1.0"
+description = "Physics-informed DL for protein-protein binding free energy estimation"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.3.2",
+    "scipy>=1.16.1",
+    "gemmi>=0.7.3",
+    "aim>=3.29.1",
+    "hydra-core>=1.3.2",
+    "loguru>=0.7.3",
+    "jaxtyping>=0.3.3",
+    "lightning>=2.5.4",
+]
+
+[project.optional-dependencies]
+# Two mutually-exclusive install profiles for torch + PyG (see docs/release-migration.md §2).
+# macOS/CPU:  uv sync --extra cpu     Linux/CUDA: uv sync --extra cu128
+cpu = [
+    "torch>=2.8.0,<2.9",
+    # <2.8: torch-geometric 2.8 routes kNN through pyg-lib (no macOS-arm wheel) and ignores
+    # torch-cluster. 2.7.x keeps the torch-cluster backend EXP-043 was trained on. See migration §2.
+    "torch-geometric>=2.6.1,<2.8",
+    "torch-cluster>=1.6.3",
+    "torch-scatter>=2.1.2",
+    "torch-sparse>=0.6.18",
+]
+# cu128 is a Linux-only profile. The markers keep the macOS slice of uv's universal
+# resolution from requesting these and falling back to PyPI sdists (which build-from-source
+# and need torch at build time). On Linux they resolve to data.pyg.org prebuilt wheels.
+cu128 = [
+    "torch>=2.8.0,<2.9 ; sys_platform == 'linux'",
+    "torch-geometric>=2.6.1,<2.8 ; sys_platform == 'linux'",
+    "torch-cluster>=1.6.3 ; sys_platform == 'linux'",
+    "torch-scatter>=2.1.2 ; sys_platform == 'linux'",
+    "torch-sparse>=0.6.18 ; sys_platform == 'linux'",
+]
+jupyter = [
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
+    "notebook>=7.3.3",
+    "plotly>=6.3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/affex"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "pyright",
+    "kaleido>=1.2.0",
+]
+
+[tool.uv]
+# cpu and cu128 extras are mutually exclusive — uv resolves a separate lock branch for each.
+conflicts = [[{ extra = "cpu" }, { extra = "cu128" }]]
+
+# torch itself: pull from the matching PyTorch index per extra.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+# PyG compiled extensions: data.pyg.org is a flat (find-links style) HTML index, one per torch+cuda.
+# For a different CUDA target, swap cu128 -> cu126/cu129 in both the index URLs and the sources below.
+[[tool.uv.index]]
+name = "pyg-cpu"
+url = "https://data.pyg.org/whl/torch-2.8.0+cpu.html"
+format = "flat"
+explicit = true
+[[tool.uv.index]]
+name = "pyg-cu128"
+url = "https://data.pyg.org/whl/torch-2.8.0+cu128.html"
+format = "flat"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128", marker = "sys_platform == 'linux'" },
+]
+torch-cluster = [
+    { index = "pyg-cpu", extra = "cpu" },
+    { index = "pyg-cu128", extra = "cu128", marker = "sys_platform == 'linux'" },
+]
+torch-scatter = [
+    { index = "pyg-cpu", extra = "cpu" },
+    { index = "pyg-cu128", extra = "cu128", marker = "sys_platform == 'linux'" },
+]
+torch-sparse = [
+    { index = "pyg-cpu", extra = "cpu" },
+    { index = "pyg-cu128", extra = "cu128", marker = "sys_platform == 'linux'" },
+]
+# torch-geometric (pure-python umbrella) stays on PyPI — no index pin needed.
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["F722"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/affex/data/types.py" = ["F821"]
+"src/affex/data/transform/graph_builder.py" = ["F821"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pyright]
+pythonVersion = "3.12"

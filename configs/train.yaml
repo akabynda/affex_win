@@ -1,0 +1,92 @@
+defaults:
+  - _self_
+  - lightning: edgepool.yaml
+
+
+seed: 42
+output_dir: ${hydra:runtime.output_dir}
+logdir: logs/
+checkpoint: null
+quiet: false
+group: null
+hypothesis: null
+label: null
+direction: null
+
+datamodule:
+  _target_: affex.data.datamodule.DataModule
+  datadir: data/raw/ppb-affinity/pdb
+  train_csv: data/train/pcann-plus-trainval.csv
+  val_fold: 9
+  test_csv: data/test/testAB-clean.csv
+  batch_size: 64
+  foldx_dir: null
+  num_workers: 4
+  graph_builder:
+    _target_: affex.data.transform.graph_builder.AtomicInterfaceGraphBuilder
+    radius: 5.0
+
+
+lightning:
+  _target_: affex.model.lightning.Alpine
+
+  optimizer_fn:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 0.001
+    weight_decay: 0.1
+
+  lr_scheduler_fn:
+    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+    _partial_: true
+    patience: 20
+    factor: 0.2
+    min_lr: 1e-4
+
+callbacks:
+  model_checkpoint:
+    _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    monitor: val/MeanAbsoluteError
+    mode: min
+    dirpath: ${output_dir}/checkpoints
+    filename: "epoch_{epoch:03d}"
+    save_last: True
+    save_top_k: 1
+    auto_insert_metric_name: False
+  early_stopping:
+    _target_: lightning.pytorch.callbacks.EarlyStopping
+    monitor: val/MeanAbsoluteError
+    patience: 40
+    verbose: False # verbosity mode
+    mode: min
+    strict: True
+  memory_monitor:
+    _target_: affex.utils.memory_monitor.MemoryMonitor
+    warn_growth_mb: 500
+    output_dir: ${output_dir}
+  save_predictions:
+    _target_: affex.utils.save_predictions.SavePredictions
+    train_preds_path: ${output_dir}/train_preds.csv
+    val_preds_path: ${output_dir}/val_preds.csv
+    test_preds_path: ${output_dir}/test_preds.csv
+
+trainer:
+  _target_: lightning.Trainer
+  accelerator: cpu  # cpu, gpu, mps
+  devices: 1
+  max_epochs: 100
+  log_every_n_steps: 10
+  deterministic: true
+
+logger:
+  _target_: aim.pytorch_lightning.AimLogger
+  repo: ${logdir}
+  experiment: affex
+
+hydra:
+  run:
+    dir: ${logdir}/runs/${now:%Y-%m-%d}/${now:%H:%M:%S}
+
+  sweep:
+    dir: ${logdir}/multiruns/${group}/
+    subdir: fold${datamodule.val_fold}_seed${seed}

@@ -1,0 +1,14 @@
+model:
+  _target_: affex.model.pcann.KdModel_PoolEdges
+  node_feature_dim: 1280
+  node_vocab_size: null
+  node_embedding_dim: 64
+  edge_feature_dim: 1
+  num_layers: 3
+  heads: 1
+  add_self_loops: false
+  concat: false
+  bias: true
+  batchnorm: true
+  linear_layer_nodes: false
+  linear_layer_edges: false

@@ -1,0 +1,5 @@
+# @package _global_
+
+datamodule:
+  train_csv: data/raw/ppb-affinity/folds/nofold_8.csv
+  val_csv: data/raw/ppb-affinity/folds/fold_8.csv

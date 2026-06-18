@@ -1,0 +1,17 @@
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+
+# Fetched out-of-band artifacts (from `make data` — see data/README.md)
+/data/raw/ppb-affinity/
+/logs/
+*.tar.gz
+
+# Inference outputs
+/predictions_*.csv
+
+# OS cruft
+.DS_Store
