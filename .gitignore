@@ -8,10 +8,12 @@ __pycache__/
 # Fetched out-of-band artifacts (from `make data` — see data/README.md)
 /data/raw/ppb-affinity/
 /logs/
+/esm/
 *.tar.gz
 
 # Inference outputs
 /predictions_*.csv
+/esm_extract*.log
 
 # OS cruft
 .DS_Store

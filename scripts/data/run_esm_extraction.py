@@ -39,6 +39,7 @@ def main():
         default=None,
         help="Path to a facebookresearch/esm clone (falls back to $ESM_MODEL_DIR).",
     )
+    parser.add_argument("--cpu", action="store_true", help="Run ESM extraction on CPU instead of CUDA")
     args = parser.parse_args()
 
     esm_model_dir = resolve_esm_model_dir(args.esm_model_dir)
@@ -46,7 +47,7 @@ def main():
     savedir = Path(args.savedir)
     savedir.mkdir(parents=True, exist_ok=True)
 
-    esm = EsmRunner(esm_model_dir, str(savedir))
+    esm = EsmRunner(esm_model_dir, str(savedir), use_gpu=not args.cpu)
     all_pdbs = sorted(datadir.glob("*.pdb"))
     pdb_list = [p for p in all_pdbs if not (savedir / f"{p.stem}.pt").exists()]
     print(f"Found {len(all_pdbs)} PDB files, {len(all_pdbs) - len(pdb_list)} already processed, {len(pdb_list)} to run")
