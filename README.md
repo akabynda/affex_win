@@ -1,104 +1,192 @@
-# affex
+# affex_win
 
-Structure-based prediction of protein–protein binding free energy (ΔG), using the
-PCANN model: an ESM2-conditioned residue-interface graph network. This repository
-ships the trained EXP-043 ensemble (25 cluster-aware cross-validation folds), the
-data needed to run and reproduce it, and the training/inference entry points.
+Windows/GPU-friendly fork of [`norsage/affex`](https://github.com/norsage/affex).
+
+affex predicts protein-protein binding free energy (dG) with the PCANN model:
+an ESM2-conditioned residue-interface graph network. This fork keeps the
+upstream EXP-043 inference path, but adds practical support for running it on
+Windows with an NVIDIA GPU.
+
+## What This Fork Adds
+
+- `src/predict.py --device auto|cpu|cuda`, so inference can run on CUDA.
+- Windows-compatible ESM extraction through the active Python interpreter.
+- Optional GPU ESM extraction instead of forcing `--nogpu`.
+- `scripts/data/run_esm_extraction_inprocess.py`, which loads ESM2 once and
+  generates embeddings much faster for selected CSVs.
+- `.gitignore` entries for local ESM clones, logs, downloaded archives, raw
+  embeddings, checkpoints, and prediction CSVs.
+
+## Tested Setup
+
+- Windows
+- Python 3.12
+- NVIDIA GeForce RTX 3070 Laptop GPU
+- PyTorch `2.8.0+cu128`
+- CUDA runtime `12.8` bundled by the PyTorch wheel
+- PyG CUDA wheels from `https://data.pyg.org/whl/torch-2.8.0+cu128.html`
 
 ## Requirements
 
-- Python ≥ 3.12
-- [`uv`](https://docs.astral.sh/uv/) (dependency manager)
-- ~7 GB free disk for the artifacts (≈1.5 GB structures, ≈4.7 GB ESM embeddings, ≈0.1 GB checkpoints)
+- Python >= 3.12
+- [`uv`](https://docs.astral.sh/uv/)
+- Recent NVIDIA driver for CUDA inference
+- Enough disk for model/data artifacts
 
-## Install
+The upstream project declares `aim>=3.29.1`, but `aimrocks` wheels are not
+available for Windows/Python 3.12. For inference, `aim` is not required, so this
+README installs only the runtime dependencies needed to predict.
 
-Two mutually-exclusive install profiles:
+## Install on Windows + CUDA
 
-```bash
-make install            # uv sync --extra cpu --no-dev    — macOS, or Linux without a GPU (default)
-make install-cu128      # uv sync --extra cu128 --no-dev  — Linux + NVIDIA (CUDA 12.8 wheels)
+From the repo root:
+
+```powershell
+py -3.12 -m pip install uv
+py -3.12 -m uv venv --python 3.12 .venv
+
+py -3.12 -m uv pip install --python .venv\Scripts\python.exe `
+  torch==2.8.0 `
+  --index-url https://download.pytorch.org/whl/cu128
+
+py -3.12 -m uv pip install --python .venv\Scripts\python.exe `
+  "torch-geometric>=2.6.1,<2.8" `
+  torch-cluster==1.6.3 `
+  torch-scatter==2.1.2 `
+  torch-sparse==0.6.18 `
+  -f https://data.pyg.org/whl/torch-2.8.0+cu128.html
+
+py -3.12 -m uv pip install --python .venv\Scripts\python.exe `
+  pandas scipy gemmi hydra-core loguru jaxtyping lightning torchmetrics omegaconf fair-esm
+
+py -3.12 -m uv pip install --python .venv\Scripts\python.exe -e . --no-deps
 ```
 
-For CUDA, the `cu128` wheels bundle the CUDA 12.8 runtime — the host needs only a
-recent NVIDIA driver, not a system CUDA toolkit. To target a different CUDA version,
-swap `cu128` → `cu126`/`cu129` in `pyproject.toml`. (For `torch 2.8.0`, PyG ships
-extension wheels only for `cpu`, `cu126`, `cu128`, `cu129`.)
+Verify CUDA:
 
-## Get data & checkpoints
-
-The artifacts ship as three separate archives:
-
-| Component | Contents | Hosted |
-|-----------|----------|--------|
-| `checkpoints` | the 25 EXP-043 models | GitHub Release asset |
-| `pdb` | structures (large) | out-of-band — download link distributed separately |
-| `esm` | precomputed ESM2 embeddings (large) | out-of-band |
-
-Download the archives (see [`docs/data-prep.md`](docs/data-prep.md) for the exact links),
-drop them in the repo root, then:
-
-```bash
-make data        # unpacks any downloaded affex-*.tar.gz in place
+```powershell
+.venv\Scripts\python.exe -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
 ```
 
-This populates `logs/multiruns/EXP-043/` and `data/raw/ppb-affinity/{pdb,esm}/`. You only
-need the components you'll use: `checkpoints` for inference, plus `pdb`/`esm` for the
-test/train UIDs.
+## Data and Checkpoints
 
-## Run inference
+For release `v0.1.0rc`, the GitHub release assets are:
 
-```bash
-make infer       # 25-fold ensemble on testAB-clean -> predictions_testAB.csv
+- `pcann_v2.tar.gz`: EXP-043 checkpoints and Hydra configs
+- `pcann_v2-pdb.tar.gz`: PDB structures
+
+Download them from:
+
+https://github.com/norsage/affex/releases/tag/v0.1.0rc
+
+Then extract in the repo root:
+
+```powershell
+tar -xzf pcann_v2.tar.gz
+tar -xzf pcann_v2-pdb.tar.gz
 ```
 
-or directly, for either test set:
+This creates:
 
-```bash
-uv run python src/predict.py \
-  --checkpoints-dir logs/multiruns/EXP-043 \
-  --test-csv data/test/testAB-clean.csv \
-  --output predictions_testAB.csv          # add --folds 0,1 for a fast subset
+```text
+logs/multiruns/EXP-043/
+data/raw/ppb-affinity/pdb/
 ```
 
-Expected ensemble headline (CPU): **testAB-clean (N=103) MAE ≈ 1.40**,
-**test-fabs (N=70) MAE ≈ 1.40**.
+The ESM embeddings are not included in those two release assets, so generate
+them locally.
 
-## Reproduce EXP-043 training
+## Generate ESM Embeddings
 
-```bash
-make train       # 25-fold multirun, seed 42, CPU
+For the shipped test sets only:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_esm_extraction_inprocess.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --device cuda
 ```
 
-EXP-043 ran on CPU (`trainer.accelerator: cpu`); a GPU only speeds it up. Exact
-numeric reproduction of the headline is a CPU statement.
+This loads `esm2_t33_650M_UR50D` once, downloads the weights on first run, and
+saves embeddings under:
 
-## ESM embeddings from scratch (optional)
+```text
+data/raw/ppb-affinity/esm/
+```
 
-The `esm` archive already ships `data/raw/ppb-affinity/esm/`; this is only needed to embed
-*new* PDBs. See [`docs/data-prep.md`](docs/data-prep.md).
+You can also use the upstream-style extractor:
 
-```bash
+```powershell
 git clone https://github.com/facebookresearch/esm
-export ESM_MODEL_DIR=$PWD/esm     # weights esm2_t33_650M_UR50D auto-download on first run
-uv run python scripts/data/run_esm_extraction.py \
-  data/raw/ppb-affinity/pdb --savedir data/raw/ppb-affinity/esm --workers 2
+.venv\Scripts\python.exe scripts\data\run_esm_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm `
+  --esm-model-dir esm
 ```
 
-## Test
+Add `--cpu` to force CPU extraction.
+
+## Run Inference
+
+Full 25-fold ensemble on `testAB-clean`:
+
+```powershell
+.venv\Scripts\python.exe src\predict.py `
+  --checkpoints-dir logs\multiruns\EXP-043 `
+  --test-csv data\test\testAB-clean.csv `
+  --output predictions_testAB.csv `
+  --device cuda
+```
+
+Full 25-fold ensemble on `test-fabs`:
+
+```powershell
+.venv\Scripts\python.exe src\predict.py `
+  --checkpoints-dir logs\multiruns\EXP-043 `
+  --test-csv data\test\test-fabs.csv `
+  --output predictions_test_fabs.csv `
+  --device cuda
+```
+
+Fast smoke test with two folds:
+
+```powershell
+.venv\Scripts\python.exe src\predict.py `
+  --checkpoints-dir logs\multiruns\EXP-043 `
+  --test-csv data\test\testAB-clean.csv `
+  --output predictions_testAB_smoke.csv `
+  --folds 0,1 `
+  --device cuda
+```
+
+## Verified Results
+
+On the tested Windows CUDA setup:
+
+| Test set | Models | N | MAE | Pearson | Spearman |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `testAB-clean.csv` | 25 | 103 | 1.4036 | 0.4867 | 0.4747 |
+| `test-fabs.csv` | 25 | 70 | 1.3994 | 0.3651 | 0.2921 |
+| `testAB-clean.csv` smoke | 2 | 103 | 1.4271 | 0.4428 | 0.4540 |
+
+## Linux / Upstream Workflow
+
+The original upstream workflow is still available for Linux/macOS:
 
 ```bash
-make test        # install + unpack + 2-fold inference + 1-epoch training smoke test
+make install
+make install-cu128
+make infer
 ```
 
-## Docs
+See the upstream docs for training and full reproduction details:
 
-- [`docs/data-prep.md`](docs/data-prep.md) — data layout, ESM extraction
-- [`docs/inference.md`](docs/inference.md) — `predict.py` contract
-- [`docs/training.md`](docs/training.md) — reproducing EXP-043
+- [`docs/data-prep.md`](docs/data-prep.md)
+- [`docs/inference.md`](docs/inference.md)
+- [`docs/training.md`](docs/training.md)
 
-## Citation / License
+## License
 
-Released under the [MIT License](LICENSE).
-
-<!-- TODO: add citation (paper / DOI) once published. -->
+Released under the [MIT License](LICENSE), following the upstream project.
