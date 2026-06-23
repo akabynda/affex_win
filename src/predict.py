@@ -77,7 +77,7 @@ def item_key(item) -> str:
     return f"{item.uid}_{rec}_{lig}"
 
 
-def run_inference(run_dir: Path, test_dataloader) -> tuple[dict[str, float], dict[str, float]]:
+def run_inference(run_dir: Path, test_dataloader, device: torch.device) -> tuple[dict[str, float], dict[str, float]]:
     """Load model from checkpoint, run test inference.
 
     Returns (predictions, targets) mapping key -> value. Only ExactMeasurement samples included.
@@ -91,6 +91,7 @@ def run_inference(run_dir: Path, test_dataloader) -> tuple[dict[str, float], dic
         optimizer_fn=hydra.utils.instantiate(cfg.lightning.optimizer_fn),
         lr_scheduler_fn=hydra.utils.instantiate(cfg.lightning.lr_scheduler_fn),
     )
+    model.to(device)
     model.eval()
 
     predictions: dict[str, float] = {}
@@ -99,6 +100,7 @@ def run_inference(run_dir: Path, test_dataloader) -> tuple[dict[str, float], dic
     with torch.no_grad():
         for batch in test_dataloader:
             graphs, descs = batch
+            graphs = graphs.to(device)
             preds = model.model.forward(graphs).cpu().flatten()
             for i, item in enumerate(descs):
                 if isinstance(item.affinity, ExactMeasurement):
@@ -130,7 +132,16 @@ def main() -> None:
     parser.add_argument("--test-csv", required=True, help="Test set CSV (already leak-filtered)")
     parser.add_argument("--output", default=None, help="Path to write the uid,target,pred ensemble CSV")
     parser.add_argument("--folds", default=None, help="Comma-separated fold indices to include (e.g. '0,1')")
+    parser.add_argument("--device", default="auto", help="'auto', 'cpu', 'cuda', or any torch device string")
     args = parser.parse_args()
+
+    if args.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise SystemExit("CUDA requested, but torch.cuda.is_available() is false")
+    print(f"Using device: {device}")
 
     checkpoints_dir = Path(args.checkpoints_dir)
     if not checkpoints_dir.is_dir():
@@ -159,7 +170,7 @@ def main() -> None:
     all_targets: dict[str, float] = {}
     for run in runs:
         print(f"  Loading {run['path'].name}...", end=" ", flush=True)
-        preds, targets = run_inference(run["path"], test_dataloader)
+        preds, targets = run_inference(run["path"], test_dataloader, device)
         print(f"{len(preds)} samples")
         for key, value in preds.items():
             preds_per_key[key].append(value)
@@ -168,12 +179,12 @@ def main() -> None:
     ensemble = {key: sum(values) / len(values) for key, values in preds_per_key.items()}
     metrics = compute_metrics(ensemble, all_targets)
 
-    print("─" * 48)
+    print("-" * 48)
     print(f"Ensemble over {len(runs)} models on {test_csv.name} (N={len(ensemble)})")
     print(f"  MAE      = {metrics['MAE']:.4f}")
     print(f"  Pearson  = {metrics['Pearson']:.4f}")
     print(f"  Spearman = {metrics['Spearman']:.4f}")
-    print("─" * 48)
+    print("-" * 48)
 
     if args.output:
         rows = [

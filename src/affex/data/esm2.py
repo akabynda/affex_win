@@ -1,6 +1,6 @@
 import os
-import shlex
 import subprocess
+import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -93,9 +93,10 @@ def embed_sequences(
 
 
 class EsmRunner:
-    def __init__(self, modeldir: str, savedir: str):
+    def __init__(self, modeldir: str, savedir: str, use_gpu: bool = True):
         self.modeldir = modeldir
         self.savedir = Path(savedir)
+        self.use_gpu = use_gpu
 
     def predict(self, sequence: str) -> Tensor:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -109,13 +110,19 @@ class EsmRunner:
             os.putenv("PYTHONPATH", os.pathsep.join([os.getenv("PYTHONPATH", ""), self.modeldir]))
 
             fasta_file = os.path.join(tmp_dir, "tmp.fasta")
-            command = (
-                f"python3 {os.path.join(self.modeldir, 'scripts', 'extract.py')} "
-                f"esm2_t33_650M_UR50D {fasta_file} {tmp_dir} "
-                "--include per_tok --nogpu"
-            )
+            command = [
+                sys.executable,
+                os.path.join(self.modeldir, "scripts", "extract.py"),
+                "esm2_t33_650M_UR50D",
+                fasta_file,
+                tmp_dir,
+                "--include",
+                "per_tok",
+            ]
+            if not self.use_gpu:
+                command.append("--nogpu")
 
-            subprocess.call(shlex.split(command))
+            subprocess.check_call(command)
             repr_key = 33
 
             embeddings = torch.load(os.path.join(tmp_dir, "tmp.pt"))["representations"][repr_key]
