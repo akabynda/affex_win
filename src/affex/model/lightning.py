@@ -46,7 +46,14 @@ class Alpine(L.LightningModule):
         self._scheduler = lr_scheduler_fn(self._optimizer)
         self.optimizer_fn = optimizer_fn
         self.lr_scheduler_fn = lr_scheduler_fn
-        self.metrics = {stage: create_regression_metrics(prefix=stage) for stage in ["train", "val", "test"]}
+        self.train_metrics = create_regression_metrics(prefix="train")
+        self.val_metrics = create_regression_metrics(prefix="val")
+        self.test_metrics = create_regression_metrics(prefix="test")
+        self.metrics = {
+            "train": self.train_metrics,
+            "val": self.val_metrics,
+            "test": self.test_metrics,
+        }
         self.synthetic_weight = synthetic_weight
 
     def forward(self, batch: BatchType) -> Tensor:

@@ -85,7 +85,7 @@ logger:
 
 hydra:
   run:
-    dir: ${logdir}/runs/${now:%Y-%m-%d}/${now:%H:%M:%S}
+    dir: ${logdir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
   sweep:
     dir: ${logdir}/multiruns/${group}/

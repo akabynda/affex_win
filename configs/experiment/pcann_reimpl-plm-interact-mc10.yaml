@@ -51,3 +51,5 @@ lightning:
     patience: 10
     factor: 0.1
     min_lr: 1e-4
+
+logger: null

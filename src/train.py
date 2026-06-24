@@ -31,10 +31,17 @@ def _log_process_memory(label: str) -> None:
     )
 
 
+def _safe_experiment_call(logger, method_name: str, *args, **kwargs) -> None:
+    experiment = getattr(logger, "experiment", None)
+    method = getattr(experiment, method_name, None)
+    if callable(method):
+        method(*args, **kwargs)
+
+
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")
 def train(cfg: DictConfig) -> None:
     callbacks = [hydra.utils.instantiate(cb_conf) for _, cb_conf in cfg.callbacks.items()] if cfg.callbacks else []
-    logger = hydra.utils.instantiate(cfg.logger)
+    logger = hydra.utils.instantiate(cfg.logger) if cfg.logger else False
     hparams = OmegaConf.to_container(
         OmegaConf.create(
             {
@@ -54,20 +61,21 @@ def train(cfg: DictConfig) -> None:
             "enable_model_summary": False,
         }
 
-    if cfg.group:
-        logger.experiment.set("group", cfg.group, strict=False)
-        logger.experiment.add_tag(cfg.group)
-    if cfg.hypothesis:
-        logger.experiment.set("hypothesis", cfg.hypothesis, strict=False)
-        logger.experiment.add_tag(cfg.hypothesis)
-    if cfg.label:
-        logger.experiment.add_tag(cfg.label)
-    if cfg.direction:
-        logger.experiment.set("direction", cfg.direction, strict=False)
-    logger.experiment.set("seed", cfg.seed, strict=False)
-    logger.experiment.set("val_fold", cfg.datamodule.val_fold, strict=False)
+    if logger:
+        if cfg.group:
+            _safe_experiment_call(logger, "set", "group", cfg.group, strict=False)
+            _safe_experiment_call(logger, "add_tag", cfg.group)
+        if cfg.hypothesis:
+            _safe_experiment_call(logger, "set", "hypothesis", cfg.hypothesis, strict=False)
+            _safe_experiment_call(logger, "add_tag", cfg.hypothesis)
+        if cfg.label:
+            _safe_experiment_call(logger, "add_tag", cfg.label)
+        if cfg.direction:
+            _safe_experiment_call(logger, "set", "direction", cfg.direction, strict=False)
+        _safe_experiment_call(logger, "set", "seed", cfg.seed, strict=False)
+        _safe_experiment_call(logger, "set", "val_fold", cfg.datamodule.val_fold, strict=False)
 
-    logger.log_hyperparams(hparams)
+        logger.log_hyperparams(hparams)
     trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger, **quiet_overrides)
 
     if cfg.seed is not None:
