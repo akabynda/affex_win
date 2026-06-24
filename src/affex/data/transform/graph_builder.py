@@ -244,6 +244,9 @@ class ResidueInterfaceEsmGraphBuilder(InterfaceGraphBuilder):
         # residue embeds
         try:
             interface_embeds = self.get_interface_embeds(item, structure, residue_to_id)
+        except FileNotFoundError as err:
+            loguru.logger.warning(f"Skipping {item.uid}: {err}")
+            return None
         except IndexError as err:
             loguru.logger.warning(f"Skipping {item.uid}: {err}")
             return None

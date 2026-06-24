@@ -194,6 +194,7 @@ Generate pair-aware embeddings for train and test CSVs:
   --csv data\test\testAB-clean.csv `
   --csv data\test\test-fabs.csv `
   --checkpoint-repo danliu1226/PLM-interact-650M-Leakage-Free-Dataset `
+  --skip-too-long `
   --device cuda
 ```
 
@@ -212,6 +213,12 @@ Optional flags:
   ligand-receptor orderings.
 - `--checkpoint-repo danliu1226/PLM-interact-650M-humanV12` switches encoder
   checkpoint.
+- `--skip-too-long` skips complexes above `--max-length` instead of aborting.
+
+With the default `--max-length 1603`, the current release data leaves out 20
+chain assignments: 16 train rows, 1 `testAB-clean` row, and 3 `test-fabs` rows.
+So this first PLM-interact baseline evaluates on `testAB-clean` N=102 and
+`test-fabs` N=67 unless a longer-context or truncation strategy is added.
 
 Train PCANN on those embeddings:
 
