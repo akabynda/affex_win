@@ -15,6 +15,12 @@ from affex.data.constants import RESIDUE_INDICES
 from affex.data.types import DataItem, InterfaceGraph
 
 
+def item_embedding_key(item: DataItem) -> str:
+    rec = "".join(item.receptor_chains)
+    lig = "".join(item.ligand_chains)
+    return f"{item.uid}_{rec}_{lig}".lower()
+
+
 def read_structure(pdb: Path) -> gemmi.Structure:
     structure = gemmi.read_structure(str(pdb))
     # setup entities, but do not remove duplicate chains
@@ -261,7 +267,7 @@ class ResidueInterfaceEsmGraphBuilder(InterfaceGraphBuilder):
     ) -> Tensor:
         # get residue indices
         chain_seqid_to_index = self.get_seqid_to_index_mapping(structure)
-        embeddings_info = self.load_embeds(item.uid)
+        embeddings_info = self.load_embeds_for_item(item)
         chain_embeds = embeddings_info["embeddings"]
         # mapping from chain id to key in embeddings dict
         chain_id_to_sequence_key = {chain_id: key for key in chain_embeds.keys() for chain_id in key.split("|")}
@@ -283,8 +289,11 @@ class ResidueInterfaceEsmGraphBuilder(InterfaceGraphBuilder):
                 raise IndexError(msg)
             embedding = chain_embeds[chains_key][fullseq_index]
             # TODO: esm preprocessing step is modified to save tensors, not numpy arrays,
-            embeds.append(torch.tensor(embedding))
+            embeds.append(torch.as_tensor(embedding))
         return torch.stack(embeds)
+
+    def load_embeds_for_item(self, item: DataItem) -> dict[str, Any]:
+        return self.load_embeds(item.uid)
 
     def load_embeds(self, uid: str) -> dict[str, Any]:
         # TODO: embeds can belong to several files
@@ -325,3 +334,14 @@ class ResidueInterfaceEsmGraphBuilder(InterfaceGraphBuilder):
                 seqid_to_index[chain.name][str(res.seqid)] = i
 
         return seqid_to_index
+
+
+class ResidueInterfacePlmInteractGraphBuilder(ResidueInterfaceEsmGraphBuilder):
+    def __init__(self, radius: float, plm_interact_dir: Path) -> None:
+        super().__init__(radius=radius, esm_dir=plm_interact_dir)
+
+    def load_embeds_for_item(self, item: DataItem) -> dict[str, Any]:
+        path = self.esm_dir / f"{item_embedding_key(item)}.pt"
+        if not path.is_file():
+            raise FileNotFoundError(f"PLM-interact embeddings not found: {path}")
+        return torch.load(path, weights_only=False)

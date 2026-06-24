@@ -3,6 +3,7 @@ from affex.data.transform.graph_builder import (
     InterfaceGraphBuilder,
     ResidueInterfaceEsmGraphBuilder,
     ResidueInterfaceGraphBuilder,
+    ResidueInterfacePlmInteractGraphBuilder,
 )
 from affex.data.types import InterfaceGraph
 
@@ -12,4 +13,5 @@ __all__ = [
     "InterfaceGraphBuilder",
     "ResidueInterfaceEsmGraphBuilder",
     "ResidueInterfaceGraphBuilder",
+    "ResidueInterfacePlmInteractGraphBuilder",
 ]

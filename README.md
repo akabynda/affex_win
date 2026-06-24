@@ -171,6 +171,58 @@ On the tested Windows CUDA setup:
 | `test-fabs.csv` | 25 | 70 | 1.3994 | 0.3651 | 0.2921 |
 | `testAB-clean.csv` smoke | 2 | 103 | 1.4271 | 0.4428 | 0.4540 |
 
+## Experimental PLM-interact Embeddings
+
+This fork also includes an experimental path inspired by
+[`liudan111/PLM-interact`](https://github.com/liudan111/PLM-interact): encode
+both sides of a complex jointly with a PLM-interact-tuned ESM2 encoder, then
+split the residue embeddings back by chain and train the same PCANN graph model.
+
+Install the extra dependencies:
+
+```powershell
+py -3.12 -m uv pip install --python .venv\Scripts\python.exe transformers huggingface-hub
+```
+
+Generate pair-aware embeddings for train and test CSVs:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\plm_interact `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --checkpoint-repo danliu1226/PLM-interact-650M-Leakage-Free-Dataset `
+  --device cuda
+```
+
+For complexes with multiple chains on one side, such as antibody Fab entries,
+the extractor concatenates all receptor chains as protein 1 and all ligand
+chains as protein 2, inserting `X` between chains by default. The saved files
+are keyed by the exact chain assignment, for example
+`uid_receptorchains_ligandchains.pt`, so different chain groupings from the same
+PDB can coexist.
+
+Optional flags:
+
+- `--chain-separator ""` disables the linker between chains.
+- `--chain-separator GGGGSGGGGS` uses a flexible-linker-like join.
+- `--bidirectional-average` averages embeddings from receptor-ligand and
+  ligand-receptor orderings.
+- `--checkpoint-repo danliu1226/PLM-interact-650M-humanV12` switches encoder
+  checkpoint.
+
+Train PCANN on those embeddings:
+
+```powershell
+.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-plm-interact-mc10 `
+  datamodule.val_fold=0 seed=42 trainer.accelerator=gpu
+```
+
+The provided config assumes a 650M encoder with `node_feature_dim: 1280`. If you
+try a 35M PLM-interact/base ESM2 model, set `lightning.model.node_feature_dim=480`.
+
 ## Linux / Upstream Workflow
 
 The original upstream workflow is still available for Linux/macOS:
