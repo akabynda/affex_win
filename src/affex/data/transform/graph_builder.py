@@ -70,6 +70,9 @@ class _InterfaceGraph:
     atom_features: Float32[Tensor, "n d"] | None = None
     residues: Float32[Tensor, "n"] | None = None
     residue_features: Float32[Tensor, "n d"] | None = None
+    esm_hidden_states: Float32[Tensor, "l d"] | None = None
+    esm_attention_mask: Int[Tensor, "l"] | None = None
+    esm_token_positions: Int[Tensor, "n"] | None = None
     foldx_energy: Float32[Tensor, "N"] | None = None
     batch: Float32[Tensor, "n"] | None = None
 
@@ -348,3 +351,93 @@ class ResidueInterfacePlmInteractGraphBuilder(ResidueInterfaceEsmGraphBuilder):
         if not path.is_file():
             raise FileNotFoundError(f"PLM-interact embeddings not found: {path}")
         return torch.load(path, weights_only=False)
+
+
+class ResidueInterfaceCachedPairEsmGraphBuilder(InterfaceGraphBuilder):
+    def __init__(self, radius: float, cache_dir: Path) -> None:
+        self.radius = radius
+        self.cache_dir = Path(cache_dir)
+
+    def build_graph(self, item: DataItem) -> InterfaceGraph | None:
+        structure = read_structure(item.pdb)
+        contacts = find_contacts(structure, item.receptor_chains, item.ligand_chains, self.radius)
+        if len(contacts) == 0:
+            loguru.logger.warning(f"Skipping {item.uid}: no contacts")
+            return None
+
+        residue_contacts: dict[tuple[tuple[gemmi.Residue, str], tuple[gemmi.Residue, str]], float] = {}
+        for contact in contacts:
+            src = contact.partner1.residue, contact.partner1.chain.name
+            dst = contact.partner2.residue, contact.partner2.chain.name
+            if not contact.partner1.residue.get_ca() or not contact.partner2.residue.get_ca():
+                continue
+            prev_dist = residue_contacts.get((src, dst), contact.dist)
+            residue_contacts[(src, dst)] = min(prev_dist, contact.dist)
+
+        residue_to_id: dict[tuple[gemmi.Residue, str], int] = {}
+        for src, _ in residue_contacts:
+            if src not in residue_to_id:
+                residue_to_id[src] = len(residue_to_id)
+
+        residue_indices = [
+            RESIDUE_INDICES.get(gemmi.one_letter_code([residue.name]), 0) for residue, _ in residue_to_id.keys()
+        ]
+        receptor_mask = torch.tensor([int(chain_id in item.receptor_chains) for _, chain_id in residue_to_id.keys()])
+        coordinates = torch.tensor([res.get_ca().pos.tolist() for res, _ in residue_to_id.keys()], dtype=torch.float32)
+
+        edge_index = to_undirected(knn_graph(coordinates, k=50))
+        src, dst = edge_index
+        is_intermol = receptor_mask[src] != receptor_mask[dst]
+        edge_index = edge_index[:, is_intermol]
+
+        src, dst = edge_index
+        distances = (coordinates[src] - coordinates[dst]).norm(dim=1)
+
+        try:
+            cache = self.load_cache_for_item(item)
+            token_positions = self.get_interface_token_positions(item, structure, residue_to_id, cache)
+        except FileNotFoundError as err:
+            loguru.logger.warning(f"Skipping {item.uid}: {err}")
+            return None
+        except (IndexError, KeyError) as err:
+            loguru.logger.warning(f"Skipping {item.uid}: {err}")
+            return None
+
+        return _InterfaceGraph(
+            residues=torch.tensor(residue_indices),
+            coordinates=coordinates,
+            receptor_mask=receptor_mask,
+            edge_index=edge_index,
+            distances=distances,
+            esm_hidden_states=cache["hidden_states"],
+            esm_attention_mask=cache["attention_mask"].long(),
+            esm_token_positions=token_positions,
+        )
+
+    def load_cache_for_item(self, item: DataItem) -> dict[str, Any]:
+        path = self.cache_dir / f"{item_embedding_key(item)}.pt"
+        if not path.is_file():
+            raise FileNotFoundError(f"cached pair ESM states not found: {path}")
+        return torch.load(path, weights_only=False)
+
+    def get_interface_token_positions(
+        self,
+        item: DataItem,
+        structure: gemmi.Structure,
+        residue_to_id: dict[tuple[gemmi.Residue, str], int],
+        cache: dict[str, Any],
+    ) -> Tensor:
+        chain_seqid_to_index = ResidueInterfaceEsmGraphBuilder.get_seqid_to_index_mapping(structure)
+        indices = cache["indices"]
+        token_offsets = cache["token_offsets"]
+        token_positions: list[int] = []
+        seq_len = int(cache["hidden_states"].shape[0])
+        for residue, chain_id in residue_to_id.keys():
+            structure_seq_index = chain_seqid_to_index[chain_id][str(residue.seqid)]
+            fullseq_index = int(indices[chain_id][structure_seq_index])
+            token_position = int(token_offsets[chain_id]) + fullseq_index
+            if token_position >= seq_len:
+                msg = f"token position = {token_position} exceeds cached sequence length = {seq_len}"
+                raise IndexError(msg)
+            token_positions.append(token_position)
+        return torch.tensor(token_positions, dtype=torch.long)

@@ -18,6 +18,9 @@ class InterfaceGraph(Protocol):
     atom_features: Float32[Tensor, "n d"] | None = None
     residues: Float32[Tensor, n] | None = None
     residue_features: Float32[Tensor, "n d"] | None = None
+    esm_hidden_states: Float32[Tensor, "b l d"] | None = None
+    esm_attention_mask: Int[Tensor, "b l"] | None = None
+    esm_token_positions: Int[Tensor, n] | None = None
     foldx_energy: Float32[Tensor, N] | None = None
     batch: Float32[Tensor, n] | None = None
 

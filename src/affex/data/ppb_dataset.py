@@ -135,8 +135,25 @@ class PPBAffinityDataset(Dataset):
     def collate_fn(batch: list[tuple[InterfaceGraph, DataItem]]) -> BatchType:
         graph, descs = zip(*batch)
         descs = cast(Iterable[DataItem], descs)
+        graphs = list(graph)
+        esm_hidden_states = [getattr(x, "esm_hidden_states", None) for x in graphs]
+        esm_attention_mask = [getattr(x, "esm_attention_mask", None) for x in graphs]
+
+        batch_graph = Batch.from_data_list(graphs)
+        if all(x is not None for x in esm_hidden_states):
+            batch_graph.esm_hidden_states = torch.nn.utils.rnn.pad_sequence(
+                [cast(torch.Tensor, x) for x in esm_hidden_states],
+                batch_first=True,
+            )
+        if all(x is not None for x in esm_attention_mask):
+            batch_graph.esm_attention_mask = torch.nn.utils.rnn.pad_sequence(
+                [cast(torch.Tensor, x) for x in esm_attention_mask],
+                batch_first=True,
+                padding_value=0,
+            )
+
         return (
-            cast(InterfaceGraph, Batch.from_data_list(list(graph))),
+            cast(InterfaceGraph, batch_graph),
             list(descs),
         )
 

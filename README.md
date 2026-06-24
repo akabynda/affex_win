@@ -230,6 +230,41 @@ Train PCANN on those embeddings:
 The provided config assumes a 650M encoder with `node_feature_dim: 1280`. If you
 try a 35M PLM-interact/base ESM2 model, set `lightning.model.node_feature_dim=480`.
 
+### Cached ESM2 Tail Fine-Tuning
+
+There is also an experimental end-to-end variant for the paired ESM2 path. It
+caches the output of the frozen lower ESM2 layers, then trains only the last ESM2
+layer together with PCANN. This keeps the experiment feasible on an 8GB laptop
+GPU while still testing whether a trainable paired encoder helps.
+
+Generate the pre-tail cache:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_esm_tail_cache_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm2_pair_tail_cache_l1 `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --tail-layers 1 `
+  --skip-too-long `
+  --device cuda
+```
+
+Fine-tune fold 0 from the already trained paired ESM2 PCANN checkpoint:
+
+```powershell
+.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-tail-mc10 `
+  datamodule.val_fold=0 seed=42 trainer.accelerator=gpu quiet=true
+```
+
+The config expects the frozen paired ESM2 checkpoints under
+`logs/multiruns/ESM2-PAIRED-FULL-42/fold${datamodule.val_fold}_seed${seed}/checkpoints`.
+In the first fold-0 trial, this setup ran without CUDA OOM, but fine-tuning
+degraded the validation/test metrics versus the frozen paired baseline. Treat it
+as a starting point for smaller learning rates, fewer trainable layers, LoRA, or
+regularization rather than as a final benchmark.
+
 ## Linux / Upstream Workflow
 
 The original upstream workflow is still available for Linux/macOS:

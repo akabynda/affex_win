@@ -42,7 +42,10 @@ class Alpine(L.LightningModule):
     ) -> None:
         super().__init__()
         self.model = model
-        self._optimizer = optimizer_fn(self.model.parameters())
+        optimizer_parameters = (
+            self.model.optimizer_parameters() if hasattr(self.model, "optimizer_parameters") else self.model.parameters()
+        )
+        self._optimizer = optimizer_fn(optimizer_parameters)
         self._scheduler = lr_scheduler_fn(self._optimizer)
         self.optimizer_fn = optimizer_fn
         self.lr_scheduler_fn = lr_scheduler_fn

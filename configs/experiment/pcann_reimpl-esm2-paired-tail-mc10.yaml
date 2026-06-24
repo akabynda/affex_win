@@ -1,0 +1,74 @@
+# @package _global_
+# Experimental PCANN variant: paired ESM-2 with cached frozen lower layers and
+# trainable ESM tail layers.
+
+defaults:
+  - _self_
+
+datamodule:
+  datadir: data/raw/ppb-affinity/pdb
+  train_csv: data/train/pcann-plus-trainval.csv
+  folds_csv: data/train/folds_pcann_plus_ppisplit_mc25.csv
+  val_fold: 0
+  test_csv: data/test/testAB-clean.csv
+  batch_size: 1
+  num_workers: 0
+  graph_builder:
+    _target_: affex.data.transform.graph_builder.ResidueInterfaceCachedPairEsmGraphBuilder
+    radius: 5.0
+    cache_dir: data/raw/ppb-affinity/esm2_pair_tail_cache_l1
+
+trainer:
+  max_epochs: 5
+  check_val_every_n_epoch: 1
+  accumulate_grad_batches: 16
+
+callbacks:
+  early_stopping:
+    monitor: val/loss
+    patience: 5
+    verbose: False
+    mode: min
+    strict: True
+  save_predictions:
+    train_preds_path: null
+
+lightning:
+  model:
+    _target_: affex.model.esm_tail_pcann.CachedEsmTailPcannModel
+    model_name: facebook/esm2_t33_650M_UR50D
+    tail_layers: 1
+    pcann_checkpoint_dir: logs/multiruns/ESM2-PAIRED-FULL-42/fold${datamodule.val_fold}_seed${seed}/checkpoints
+    pcann_lr: 0.0001
+    esm_lr: 0.00001
+    pcann:
+      _target_: affex.model.pcann.KdModel_PoolEdges
+      node_feature_dim: 1280
+      node_vocab_size: null
+      node_embedding_dim: 64
+      edge_feature_dim: 1
+      num_layers: 2
+      heads: 1
+      add_self_loops: false
+      concat: false
+      bias: true
+      batchnorm: true
+      linear_layer_nodes: false
+      linear_layer_edges: false
+      use_foldx: false
+
+  optimizer_fn:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: 0.001
+    weight_decay: 0.003
+    amsgrad: true
+
+  lr_scheduler_fn:
+    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+    _partial_: true
+    patience: 3
+    factor: 0.1
+    min_lr: 1e-5
+
+logger: null

@@ -42,17 +42,12 @@ def _safe_experiment_call(logger, method_name: str, *args, **kwargs) -> None:
 def train(cfg: DictConfig) -> None:
     callbacks = [hydra.utils.instantiate(cb_conf) for _, cb_conf in cfg.callbacks.items()] if cfg.callbacks else []
     logger = hydra.utils.instantiate(cfg.logger) if cfg.logger else False
-    hparams = OmegaConf.to_container(
-        OmegaConf.create(
-            {
-                "model": cfg.lightning,
-                "data": cfg.datamodule,
-                "trainer": cfg.trainer,
-                "seed": cfg.seed,
-            }
-        ),
-        resolve=True,
-    )
+    hparams = {
+        "model": OmegaConf.to_container(cfg.lightning, resolve=True),
+        "data": OmegaConf.to_container(cfg.datamodule, resolve=True),
+        "trainer": OmegaConf.to_container(cfg.trainer, resolve=True),
+        "seed": cfg.seed,
+    }
 
     quiet_overrides = {}
     if cfg.quiet:
