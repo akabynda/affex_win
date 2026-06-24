@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import math
 import re
 from pathlib import Path
 
@@ -10,14 +11,47 @@ from torch import Tensor, nn
 from affex.data.types import AtomicInterfacePredictor, InterfaceGraph
 
 
-class CachedEsmTailPcannModel(AtomicInterfacePredictor):
+class LoraLinear(nn.Module):
+    def __init__(
+        self,
+        base: nn.Linear,
+        rank: int,
+        alpha: float,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        if rank <= 0:
+            raise ValueError("rank must be positive")
+
+        self.base = base
+        for param in self.base.parameters():
+            param.requires_grad = False
+
+        self.lora_a = nn.Linear(base.in_features, rank, bias=False)
+        self.lora_b = nn.Linear(rank, base.out_features, bias=False)
+        self.dropout = nn.Dropout(dropout)
+        self.scaling = alpha / rank
+
+        nn.init.kaiming_uniform_(self.lora_a.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_b.weight)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.base(x) + self.lora_b(self.lora_a(self.dropout(x))) * self.scaling
+
+
+class CachedEsmLoraPcannModel(AtomicInterfacePredictor):
     def __init__(
         self,
         pcann: AtomicInterfacePredictor,
         model_name: str = "facebook/esm2_t33_650M_UR50D",
         tail_layers: int = 1,
-        pcann_lr: float = 1e-3,
-        esm_lr: float = 1e-5,
+        lora_rank: int = 4,
+        lora_alpha: float = 8.0,
+        lora_dropout: float = 0.0,
+        lora_lr: float = 1e-4,
+        pcann_lr: float = 1e-5,
+        train_pcann: bool = False,
+        lora_targets: list[str] | None = None,
         pcann_checkpoint: str | None = None,
         pcann_checkpoint_dir: str | None = None,
         **_: object,
@@ -33,20 +67,44 @@ class CachedEsmTailPcannModel(AtomicInterfacePredictor):
         if tail_layers > len(base.encoder.layer):
             raise ValueError(f"tail_layers={tail_layers} exceeds model depth={len(base.encoder.layer)}")
 
+        for param in base.parameters():
+            param.requires_grad = False
+
         self.pcann = pcann
         self.config = base.config
         self.rotary_embeddings = base.rotary_embeddings
         self.tail_layers = nn.ModuleList(list(base.encoder.layer[-tail_layers:]))
         self.emb_layer_norm_after = base.encoder.emb_layer_norm_after
+        self.lora_lr = lora_lr
         self.pcann_lr = pcann_lr
-        self.esm_lr = esm_lr
+        self.train_pcann = train_pcann
         self._create_bidirectional_mask = create_bidirectional_mask
+
         self._load_pcann_checkpoint(pcann_checkpoint, pcann_checkpoint_dir)
-        self.tail_layers.train()
-        self.emb_layer_norm_after.train()
+        for param in self.pcann.parameters():
+            param.requires_grad = train_pcann
+        if not train_pcann:
+            self.pcann.eval()
+
+        targets = lora_targets or ["query", "value"]
+        self._inject_lora(targets, rank=lora_rank, alpha=lora_alpha, dropout=lora_dropout)
 
         del base
         gc.collect()
+
+    def _inject_lora(self, targets: list[str], rank: int, alpha: float, dropout: float) -> None:
+        injected = 0
+        for layer in self.tail_layers:
+            self_attention = layer.attention.self
+            for target in targets:
+                if not hasattr(self_attention, target):
+                    raise ValueError(f"Unsupported LoRA target for ESM self-attention: {target}")
+                module = getattr(self_attention, target)
+                if not isinstance(module, nn.Linear):
+                    raise TypeError(f"Expected nn.Linear at target {target}, got {type(module)}")
+                setattr(self_attention, target, LoraLinear(module, rank=rank, alpha=alpha, dropout=dropout))
+                injected += 1
+        print(f"Injected LoRA into {injected} ESM attention projections")
 
     def _load_pcann_checkpoint(self, checkpoint: str | None, checkpoint_dir: str | None) -> None:
         checkpoint_path = Path(checkpoint) if checkpoint else None
@@ -78,17 +136,27 @@ class CachedEsmTailPcannModel(AtomicInterfacePredictor):
         )
 
     def optimizer_parameters(self) -> list[dict[str, object]]:
-        esm_params = list(self.tail_layers.parameters()) + list(self.emb_layer_norm_after.parameters())
-        return [
-            {"params": self.pcann.parameters(), "lr": self.pcann_lr},
-            {"params": esm_params, "lr": self.esm_lr},
+        groups: list[dict[str, object]] = [
+            {
+                "params": [param for name, param in self.named_parameters() if "lora_" in name and param.requires_grad],
+                "lr": self.lora_lr,
+            }
         ]
+        if self.train_pcann:
+            groups.append({"params": self.pcann.parameters(), "lr": self.pcann_lr})
+        return groups
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if not self.train_pcann:
+            self.pcann.eval()
+        return self
 
     def forward(self, graph: InterfaceGraph) -> Tensor:
         if graph.esm_hidden_states is None or graph.esm_attention_mask is None or graph.esm_token_positions is None:
             raise ValueError("graph must contain cached ESM hidden states, attention mask, and token positions")
         if graph.batch is None:
-            raise ValueError("graph.batch is required for cached ESM tail model")
+            raise ValueError("graph.batch is required for cached ESM LoRA model")
 
         dtype = next(self.tail_layers.parameters()).dtype
         hidden_states = graph.esm_hidden_states.to(dtype=dtype)

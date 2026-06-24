@@ -1,4 +1,4 @@
-"""Extract cached pair ESM states before the trainable tail layers."""
+"""Extract cached pair ESM states before tail layers/adapters."""
 
 from __future__ import annotations
 
@@ -114,7 +114,7 @@ def encode_tail_cache(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Extract cached pair ESM states before trainable tail layers")
+    parser = argparse.ArgumentParser(description="Extract cached pair ESM states before tail layers/adapters")
     parser.add_argument("pdb_dir", type=Path, help="Directory containing .pdb files")
     parser.add_argument("--csv", type=Path, action="append", required=True, help="CSV containing uid/receptor/ligand")
     parser.add_argument("--savedir", type=Path, default=Path(DEFAULT_SAVEDIR))

@@ -1,6 +1,6 @@
 # @package _global_
 # Experimental PCANN variant: paired ESM-2 with cached frozen lower layers and
-# trainable ESM tail layers.
+# LoRA adapters on the frozen ESM tail.
 
 defaults:
   - _self_
@@ -35,12 +35,19 @@ callbacks:
 
 lightning:
   model:
-    _target_: affex.model.esm_tail_pcann.CachedEsmTailPcannModel
+    _target_: affex.model.esm_lora_pcann.CachedEsmLoraPcannModel
     model_name: facebook/esm2_t33_650M_UR50D
     tail_layers: 1
+    lora_targets:
+      - query
+      - value
+    lora_rank: 4
+    lora_alpha: 8
+    lora_dropout: 0.05
+    lora_lr: 0.00001
+    train_pcann: false
+    pcann_lr: 0.00001
     pcann_checkpoint_dir: logs/multiruns/ESM2-PAIRED-FULL-42/fold${datamodule.val_fold}_seed${seed}/checkpoints
-    pcann_lr: 0.0001
-    esm_lr: 0.00001
     pcann:
       _target_: affex.model.pcann.KdModel_PoolEdges
       node_feature_dim: 1280
@@ -61,7 +68,7 @@ lightning:
     _target_: torch.optim.Adam
     _partial_: true
     lr: 0.001
-    weight_decay: 0.003
+    weight_decay: 0.0
     amsgrad: true
 
   lr_scheduler_fn:
@@ -69,6 +76,6 @@ lightning:
     _partial_: true
     patience: 3
     factor: 0.1
-    min_lr: 1e-5
+    min_lr: 1e-6
 
 logger: null

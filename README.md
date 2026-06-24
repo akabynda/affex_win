@@ -230,12 +230,13 @@ Train PCANN on those embeddings:
 The provided config assumes a 650M encoder with `node_feature_dim: 1280`. If you
 try a 35M PLM-interact/base ESM2 model, set `lightning.model.node_feature_dim=480`.
 
-### Cached ESM2 Tail Fine-Tuning
+### Cached ESM2 LoRA Fine-Tuning
 
 There is also an experimental end-to-end variant for the paired ESM2 path. It
-caches the output of the frozen lower ESM2 layers, then trains only the last ESM2
-layer together with PCANN. This keeps the experiment feasible on an 8GB laptop
-GPU while still testing whether a trainable paired encoder helps.
+caches the output of the frozen lower ESM2 layers, then keeps the ESM2 tail
+frozen and trains small LoRA adapters on its attention projections. This keeps
+the experiment feasible on an 8GB laptop GPU while still testing whether a
+trainable paired encoder helps.
 
 Generate the pre-tail cache:
 
@@ -254,16 +255,18 @@ Generate the pre-tail cache:
 Fine-tune fold 0 from the already trained paired ESM2 PCANN checkpoint:
 
 ```powershell
-.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-tail-mc10 `
+.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-lora-mc10 `
   datamodule.val_fold=0 seed=42 trainer.accelerator=gpu quiet=true
 ```
 
 The config expects the frozen paired ESM2 checkpoints under
 `logs/multiruns/ESM2-PAIRED-FULL-42/fold${datamodule.val_fold}_seed${seed}/checkpoints`.
-In the first fold-0 trial, this setup ran without CUDA OOM, but fine-tuning
-degraded the validation/test metrics versus the frozen paired baseline. Treat it
-as a starting point for smaller learning rates, fewer trainable layers, LoRA, or
-regularization rather than as a final benchmark.
+By default, PCANN is initialized from that checkpoint and frozen; only rank-4
+LoRA adapters on the last ESM2 layer's `query` and `value` projections train.
+The adapter learning rate is intentionally conservative (`1e-5`): in fold-0
+trials, `1e-4` improved validation MAE but hurt the held-out test score. The
+earlier full-tail fine-tuning path was removed because fold-0 trials degraded
+the frozen paired baseline.
 
 ## Linux / Upstream Workflow
 
