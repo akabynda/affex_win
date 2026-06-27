@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import gemmi
 import torch
@@ -137,6 +137,46 @@ def average_chain_embeddings(first: dict[str, Tensor], second: dict[str, Tensor]
     return {chain_id: (first[chain_id] + second[chain_id]) / 2 for chain_id in first}
 
 
+def select_interface_chains(
+    structure: gemmi.Structure,
+    receptor_chains: list[str],
+    ligand_chains: list[str],
+    radius: float,
+) -> tuple[list[str], list[str]]:
+    contact_structure = structure.clone()
+    cs = gemmi.ContactSearch(radius)
+    cs.ignore = gemmi.ContactSearch.Ignore.SameChain
+    cs.twice = True
+
+    selected_chains = receptor_chains + ligand_chains
+    sel = gemmi.Selection(",".join(selected_chains))
+    sel.remove_not_selected(contact_structure)
+
+    ns = gemmi.NeighborSearch(contact_structure, radius).populate()
+    receptor_set = set(receptor_chains)
+    ligand_set = set(ligand_chains)
+    interface_chains: set[str] = set()
+
+    for contact in cs.find_contacts(ns):
+        src_chain = contact.partner1.chain.name
+        dst_chain = contact.partner2.chain.name
+        is_rec_lig = src_chain in receptor_set and dst_chain in ligand_set
+        is_lig_rec = src_chain in ligand_set and dst_chain in receptor_set
+        if is_rec_lig or is_lig_rec:
+            interface_chains.add(src_chain)
+            interface_chains.add(dst_chain)
+
+    interface_receptors = [chain_id for chain_id in receptor_chains if chain_id in interface_chains]
+    interface_ligands = [chain_id for chain_id in ligand_chains if chain_id in interface_chains]
+    if not interface_receptors or not interface_ligands:
+        raise ValueError(
+            f"no interface chains found within radius={radius} for "
+            f"receptor={''.join(receptor_chains)} ligand={''.join(ligand_chains)}"
+        )
+
+    return interface_receptors, interface_ligands
+
+
 def encode_complex_embeddings(
     item: DataItem,
     structure: gemmi.Structure,
@@ -144,6 +184,8 @@ def encode_complex_embeddings(
     max_length: int,
     chain_separator: str = "X",
     bidirectional_average: bool = False,
+    chain_policy: Literal["all", "interface"] = "all",
+    interface_radius: float = 5.0,
 ) -> dict[str, Any]:
     full_sequences = get_full_sequences(structure)
     sequences = get_sequences(structure)
@@ -154,8 +196,21 @@ def encode_complex_embeddings(
     if missing:
         raise KeyError(f"chains missing from SEQRES/full sequences for {item.uid}: {missing}")
 
-    receptor_sequence, receptor_spans = build_side_sequence(full_sequences, item.receptor_chains, chain_separator)
-    ligand_sequence, ligand_spans = build_side_sequence(full_sequences, item.ligand_chains, chain_separator)
+    if chain_policy == "all":
+        receptor_chains = item.receptor_chains
+        ligand_chains = item.ligand_chains
+    elif chain_policy == "interface":
+        receptor_chains, ligand_chains = select_interface_chains(
+            structure=structure,
+            receptor_chains=item.receptor_chains,
+            ligand_chains=item.ligand_chains,
+            radius=interface_radius,
+        )
+    else:
+        raise ValueError(f"Unsupported chain_policy: {chain_policy}")
+
+    receptor_sequence, receptor_spans = build_side_sequence(full_sequences, receptor_chains, chain_separator)
+    ligand_sequence, ligand_spans = build_side_sequence(full_sequences, ligand_chains, chain_separator)
 
     receptor_embeddings, ligand_embeddings = encoder.encode_pair(receptor_sequence, ligand_sequence, max_length)
     chain_embeddings = {
@@ -184,6 +239,12 @@ def encode_complex_embeddings(
             "embedding_size": encoder.embedding_size,
             "chain_separator": chain_separator,
             "bidirectional_average": bidirectional_average,
+            "chain_policy": chain_policy,
+            "interface_radius": interface_radius if chain_policy == "interface" else None,
+            "original_receptor_chains": item.receptor_chains,
+            "original_ligand_chains": item.ligand_chains,
+            "encoded_receptor_chains": receptor_chains,
+            "encoded_ligand_chains": ligand_chains,
             "format": "plm-interact-pair-v1",
         },
     }

@@ -208,9 +208,12 @@ PDB can coexist.
 Optional flags:
 
 - `--chain-separator ""` disables the linker between chains.
-- `--chain-separator GGGGSGGGGS` uses a flexible-linker-like join.
+- `--chain-separator GGGGSGGGGSGGGGS` uses a flexible-linker-like join.
 - `--bidirectional-average` averages embeddings from receptor-ligand and
   ligand-receptor orderings.
+- `--chain-policy interface` encodes only chains that contact the opposite side
+  within `--interface-radius`; this can drop non-interface antibody chains while
+  preserving the original file key.
 - `--checkpoint-repo danliu1226/PLM-interact-650M-humanV12` switches encoder
   checkpoint.
 - `--skip-too-long` skips complexes above `--max-length` instead of aborting.
@@ -229,6 +232,106 @@ Train PCANN on those embeddings:
 
 The provided config assumes a 650M encoder with `node_feature_dim: 1280`. If you
 try a 35M PLM-interact/base ESM2 model, set `lightning.model.node_feature_dim=480`.
+
+### Base ESM2 Paired Variants
+
+The same extractor can also use frozen base ESM2 with no PLM-interact checkpoint
+by passing `--checkpoint-repo ""`. Keep each variant in its own embedding
+directory so the results stay separate from the classic paired baseline.
+
+Classic paired ESM2 with `X` between chains on the same side:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm2_paired `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --checkpoint-repo "" `
+  --skip-too-long `
+  --device cuda
+```
+
+Flexible-linker paired ESM2:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm2_paired_linker_g4s3 `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --checkpoint-repo "" `
+  --chain-separator GGGGSGGGGSGGGGS `
+  --skip-too-long `
+  --device cuda
+```
+
+Bidirectional-average variants add `--bidirectional-average` and use separate
+directories:
+
+```powershell
+# Classic X separator + bidirectional average
+.venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm2_paired_bidir `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --checkpoint-repo "" `
+  --bidirectional-average `
+  --skip-too-long `
+  --device cuda
+
+# Flexible linker + bidirectional average
+.venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm2_paired_linker_g4s3_bidir `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --checkpoint-repo "" `
+  --chain-separator GGGGSGGGGSGGGGS `
+  --bidirectional-average `
+  --skip-too-long `
+  --device cuda
+```
+
+To test the antibody-pruning idea, encode only chains that actually contact the
+opposite side of the interface:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm2_paired_linker_g4s3_interface `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --checkpoint-repo "" `
+  --chain-separator GGGGSGGGGSGGGGS `
+  --chain-policy interface `
+  --interface-radius 5.0 `
+  --skip-too-long `
+  --device cuda
+```
+
+Train the matching PCANN configs by choosing the experiment name that points at
+the embedding directory:
+
+```powershell
+.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-linker-mc10 `
+  datamodule.val_fold=0 seed=42 group=ESM2-PAIRED-LINKER-FOLD0 trainer.accelerator=gpu quiet=true
+
+.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-bidir-mc10 `
+  datamodule.val_fold=0 seed=42 group=ESM2-PAIRED-BIDIR-FOLD0 trainer.accelerator=gpu quiet=true
+
+.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-linker-bidir-mc10 `
+  datamodule.val_fold=0 seed=42 group=ESM2-PAIRED-LINKER-BIDIR-FOLD0 trainer.accelerator=gpu quiet=true
+
+.venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-linker-interface-mc10 `
+  datamodule.val_fold=0 seed=42 group=ESM2-PAIRED-LINKER-INTERFACE-FOLD0 trainer.accelerator=gpu quiet=true
+```
 
 ### Cached ESM2 LoRA Fine-Tuning
 

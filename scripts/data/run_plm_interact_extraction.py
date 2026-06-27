@@ -60,6 +60,13 @@ def main() -> None:
     parser.add_argument("--max-length", type=int, default=1603)
     parser.add_argument("--chain-separator", default="X", help="Residues inserted between chains on the same side")
     parser.add_argument("--bidirectional-average", action="store_true", help="Average rec-lig and lig-rec encodings")
+    parser.add_argument(
+        "--chain-policy",
+        choices=["all", "interface"],
+        default="all",
+        help="Encode all requested chains, or only chains with cross-side interface contacts",
+    )
+    parser.add_argument("--interface-radius", type=float, default=5.0, help="Contact radius for --chain-policy interface")
     parser.add_argument("--skip-too-long", action="store_true", help="Skip complexes exceeding --max-length")
     parser.add_argument("--device", default="auto", help="'auto', 'cpu', 'cuda', or any torch device string")
     parser.add_argument("--limit", type=int, default=None, help="Debug: process at most N pending complexes")
@@ -88,6 +95,11 @@ def main() -> None:
     )
     print(f"Base model: {args.model_name}")
     print(f"PLM-interact checkpoint repo: {checkpoint_repo or '<none>'}")
+    print(f"Chain separator: {args.chain_separator!r}")
+    print(f"Bidirectional average: {args.bidirectional_average}")
+    print(f"Chain policy: {args.chain_policy}")
+    if args.chain_policy == "interface":
+        print(f"Interface radius: {args.interface_radius}")
 
     encoder = PlmInteractPairEncoder(
         model_name=args.model_name,
@@ -109,6 +121,8 @@ def main() -> None:
                 max_length=args.max_length,
                 chain_separator=args.chain_separator,
                 bidirectional_average=args.bidirectional_average,
+                chain_policy=args.chain_policy,
+                interface_radius=args.interface_radius,
             )
             torch.save(embeddings, out_path)
         except ValueError as err:

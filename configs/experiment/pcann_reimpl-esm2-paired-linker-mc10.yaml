@@ -1,0 +1,55 @@
+# @package _global_
+# Frozen base ESM2 paired embeddings with a flexible G4S-style linker between
+# chains on the same side of the pair.
+
+defaults:
+  - _self_
+  - override /lightning: edgepool.yaml
+
+datamodule:
+  datadir: data/raw/ppb-affinity/pdb
+  train_csv: data/train/pcann-plus-trainval.csv
+  folds_csv: data/train/folds_pcann_plus_ppisplit_mc25.csv
+  val_fold: 0
+  test_csv: data/test/testAB-clean.csv
+  batch_size: 64
+  graph_builder:
+    _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
+    radius: 5.0
+    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_g4s3
+
+trainer:
+  max_epochs: 20
+  check_val_every_n_epoch: 1
+
+callbacks:
+  early_stopping:
+    monitor: val/loss
+    patience: 20
+    verbose: False
+    mode: min
+    strict: True
+
+lightning:
+  model:
+    node_feature_dim: 1280
+    node_vocab_size: null
+    node_embedding_dim: 64
+    num_layers: 2
+    use_foldx: false
+
+  optimizer_fn:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: 0.001
+    weight_decay: 0.003
+    amsgrad: true
+
+  lr_scheduler_fn:
+    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+    _partial_: true
+    patience: 10
+    factor: 0.1
+    min_lr: 1e-4
+
+logger: null
