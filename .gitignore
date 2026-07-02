@@ -8,6 +8,7 @@ __pycache__/
 # Fetched out-of-band artifacts (from `make data` — see data/README.md)
 /data/raw/ppb-affinity/
 /logs/
+/experiment_logs/
 /esm/
 *.tar.gz
 
