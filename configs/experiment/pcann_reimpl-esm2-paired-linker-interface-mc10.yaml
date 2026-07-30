@@ -1,6 +1,6 @@
 # @package _global_
-# Frozen base ESM2 paired embeddings with flexible chain linker, encoding only
-# chains that contact the opposite side of the interface.
+# Frozen base ESM2 paired embeddings with a distance-aware GGGS chain linker,
+# encoding only chains that contact the opposite side of the interface.
 
 defaults:
   - _self_
@@ -16,7 +16,7 @@ datamodule:
   graph_builder:
     _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
     radius: 5.0
-    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_g4s3_interface
+    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_interface
 
 trainer:
   max_epochs: 20

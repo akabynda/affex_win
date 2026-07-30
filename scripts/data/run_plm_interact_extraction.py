@@ -14,7 +14,12 @@ import torch
 from tqdm import tqdm
 
 from affex.data.measurement import ExactMeasurement
-from affex.data.plm_interact import PlmInteractPairEncoder, encode_complex_embeddings
+from affex.data.plm_interact import (
+    DEFAULT_LINKER_REPEAT,
+    DEFAULT_RESIDUE_CONTOUR_LENGTH_ANGSTROM,
+    PlmInteractPairEncoder,
+    encode_complex_embeddings,
+)
 from affex.data.transform.graph_builder import item_embedding_key, read_structure
 from affex.data.types import DataItem
 
@@ -59,6 +64,27 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, default=None, help="Local PLM-interact pytorch_model.bin")
     parser.add_argument("--max-length", type=int, default=1603)
     parser.add_argument("--chain-separator", default="X", help="Residues inserted between chains on the same side")
+    parser.add_argument(
+        "--distance-aware-linker",
+        action="store_true",
+        help="Size a separate linker for each chain boundary from its terminal CA distance",
+    )
+    parser.add_argument(
+        "--inter-protein-distance-aware-linker",
+        action="store_true",
+        help="Replace the ESM2 pair EOS boundary with a distance-aware residue linker",
+    )
+    parser.add_argument(
+        "--linker-repeat",
+        default=DEFAULT_LINKER_REPEAT,
+        help="Residue motif repeated by --distance-aware-linker",
+    )
+    parser.add_argument(
+        "--residue-contour-length",
+        type=float,
+        default=DEFAULT_RESIDUE_CONTOUR_LENGTH_ANGSTROM,
+        help="Contour length of one linker residue in angstroms",
+    )
     parser.add_argument("--bidirectional-average", action="store_true", help="Average rec-lig and lig-rec encodings")
     parser.add_argument(
         "--chain-policy",
@@ -66,11 +92,18 @@ def main() -> None:
         default="all",
         help="Encode all requested chains, or only chains with cross-side interface contacts",
     )
-    parser.add_argument("--interface-radius", type=float, default=5.0, help="Contact radius for --chain-policy interface")
+    parser.add_argument(
+        "--interface-radius",
+        type=float,
+        default=5.0,
+        help="Contact radius for --chain-policy interface",
+    )
     parser.add_argument("--skip-too-long", action="store_true", help="Skip complexes exceeding --max-length")
     parser.add_argument("--device", default="auto", help="'auto', 'cpu', 'cuda', or any torch device string")
     parser.add_argument("--limit", type=int, default=None, help="Debug: process at most N pending complexes")
     args = parser.parse_args()
+    if args.inter_protein_distance_aware_linker and not args.distance_aware_linker:
+        parser.error("--inter-protein-distance-aware-linker requires --distance-aware-linker")
 
     if args.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -96,6 +129,14 @@ def main() -> None:
     print(f"Base model: {args.model_name}")
     print(f"PLM-interact checkpoint repo: {checkpoint_repo or '<none>'}")
     print(f"Chain separator: {args.chain_separator!r}")
+    print(f"Distance-aware linker: {args.distance_aware_linker}")
+    print(
+        "Inter-protein distance-aware linker instead of pair EOS: "
+        f"{args.inter_protein_distance_aware_linker}"
+    )
+    if args.distance_aware_linker:
+        print(f"Linker repeat: {args.linker_repeat!r}")
+        print(f"Residue contour length: {args.residue_contour_length} A")
     print(f"Bidirectional average: {args.bidirectional_average}")
     print(f"Chain policy: {args.chain_policy}")
     if args.chain_policy == "interface":
@@ -123,6 +164,10 @@ def main() -> None:
                 bidirectional_average=args.bidirectional_average,
                 chain_policy=args.chain_policy,
                 interface_radius=args.interface_radius,
+                distance_aware_linker=args.distance_aware_linker,
+                inter_protein_distance_aware_linker=args.inter_protein_distance_aware_linker,
+                linker_repeat=args.linker_repeat,
+                residue_contour_length_angstrom=args.residue_contour_length,
             )
             torch.save(embeddings, out_path)
         except ValueError as err:

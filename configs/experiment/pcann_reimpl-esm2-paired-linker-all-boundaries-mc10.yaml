@@ -1,6 +1,6 @@
 # @package _global_
-# Frozen base ESM2 paired embeddings with a distance-aware GGGS chain linker and
-# bidirectional averaging over receptor-ligand and ligand-receptor orderings.
+# Frozen base ESM2 embeddings with distance-aware GGGS linkers at every chain
+# boundary, including the receptor-ligand boundary (no pair EOS between them).
 
 defaults:
   - _self_
@@ -16,7 +16,7 @@ datamodule:
   graph_builder:
     _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
     radius: 5.0
-    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_bidir
+    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_all_boundaries
 
 trainer:
   max_epochs: 20

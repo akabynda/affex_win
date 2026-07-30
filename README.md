@@ -208,7 +208,12 @@ PDB can coexist.
 Optional flags:
 
 - `--chain-separator ""` disables the linker between chains.
-- `--chain-separator GGGGSGGGGSGGGGS` uses a flexible-linker-like join.
+- `--distance-aware-linker` inserts a separate geometry-derived `GGGS`
+  linker at every chain boundary. Its target contour length is the terminal
+  C-alpha distance multiplied by `pi / 2`; the number of repeats is rounded up.
+- `--linker-repeat GGGS` changes the repeat used by the geometry-derived linker.
+- `--residue-contour-length 3.8` sets its assumed contour length per residue in
+  angstroms.
 - `--bidirectional-average` averages embeddings from receptor-ligand and
   ligand-receptor orderings.
 - `--chain-policy interface` encodes only chains that contact the opposite side
@@ -236,7 +241,7 @@ try a 35M PLM-interact/base ESM2 model, set `lightning.model.node_feature_dim=48
 ### Base ESM2 Paired Variants
 
 The same extractor can also use frozen base ESM2 with no PLM-interact checkpoint
-by passing `--checkpoint-repo ""`. Keep each variant in its own embedding
+by passing `--checkpoint-repo=`. Keep each variant in its own embedding
 directory so the results stay separate from the classic paired baseline.
 
 Classic paired ESM2 with `X` between chains on the same side:
@@ -248,25 +253,47 @@ Classic paired ESM2 with `X` between chains on the same side:
   --csv data\train\pcann-plus-trainval.csv `
   --csv data\test\testAB-clean.csv `
   --csv data\test\test-fabs.csv `
-  --checkpoint-repo "" `
+  --checkpoint-repo= `
   --skip-too-long `
   --device cuda
 ```
 
-Flexible-linker paired ESM2:
+Distance-aware flexible-linker paired ESM2:
 
 ```powershell
 .venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
   data\raw\ppb-affinity\pdb `
-  --savedir data\raw\ppb-affinity\esm2_paired_linker_g4s3 `
+  --savedir data\raw\ppb-affinity\esm2_paired_linker_distance_gggs `
   --csv data\train\pcann-plus-trainval.csv `
   --csv data\test\testAB-clean.csv `
   --csv data\test\test-fabs.csv `
-  --checkpoint-repo "" `
-  --chain-separator GGGGSGGGGSGGGGS `
+  --checkpoint-repo= `
+  --distance-aware-linker `
   --skip-too-long `
   --device cuda
 ```
+
+To replace the ESM2 pair `<eos>` boundary with another distance-aware GGGS
+linker, encode receptor and ligand as one linked sequence:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esm2_paired_linker_distance_gggs_all_boundaries `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --checkpoint-repo= `
+  --distance-aware-linker `
+  --inter-protein-distance-aware-linker `
+  --skip-too-long `
+  --device cuda
+```
+
+In this mode, the last receptor chain and first ligand chain determine the
+inter-protein linker length. The linker replaces the internal pair `<eos>`;
+only the normal outer BOS/EOS tokens remain. Train the resulting embeddings
+with `+experiment=pcann_reimpl-esm2-paired-linker-all-boundaries-mc10`.
 
 Bidirectional-average variants add `--bidirectional-average` and use separate
 directories:
@@ -279,20 +306,20 @@ directories:
   --csv data\train\pcann-plus-trainval.csv `
   --csv data\test\testAB-clean.csv `
   --csv data\test\test-fabs.csv `
-  --checkpoint-repo "" `
+  --checkpoint-repo= `
   --bidirectional-average `
   --skip-too-long `
   --device cuda
 
-# Flexible linker + bidirectional average
+# Distance-aware flexible linker + bidirectional average
 .venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
   data\raw\ppb-affinity\pdb `
-  --savedir data\raw\ppb-affinity\esm2_paired_linker_g4s3_bidir `
+  --savedir data\raw\ppb-affinity\esm2_paired_linker_distance_gggs_bidir `
   --csv data\train\pcann-plus-trainval.csv `
   --csv data\test\testAB-clean.csv `
   --csv data\test\test-fabs.csv `
-  --checkpoint-repo "" `
-  --chain-separator GGGGSGGGGSGGGGS `
+  --checkpoint-repo= `
+  --distance-aware-linker `
   --bidirectional-average `
   --skip-too-long `
   --device cuda
@@ -304,12 +331,12 @@ opposite side of the interface:
 ```powershell
 .venv\Scripts\python.exe scripts\data\run_plm_interact_extraction.py `
   data\raw\ppb-affinity\pdb `
-  --savedir data\raw\ppb-affinity\esm2_paired_linker_g4s3_interface `
+  --savedir data\raw\ppb-affinity\esm2_paired_linker_distance_gggs_interface `
   --csv data\train\pcann-plus-trainval.csv `
   --csv data\test\testAB-clean.csv `
   --csv data\test\test-fabs.csv `
-  --checkpoint-repo "" `
-  --chain-separator GGGGSGGGGSGGGGS `
+  --checkpoint-repo= `
+  --distance-aware-linker `
   --chain-policy interface `
   --interface-radius 5.0 `
   --skip-too-long `
@@ -332,6 +359,42 @@ the embedding directory:
 .venv\Scripts\python.exe src\train.py +experiment=pcann_reimpl-esm2-paired-linker-interface-mc10 `
   datamodule.val_fold=0 seed=42 group=ESM2-PAIRED-LINKER-INTERFACE-FOLD0 trainer.accelerator=gpu quiet=true
 ```
+
+### Classic PCANN with ESM-C 600M
+
+For a direct backbone replacement in classic PCANN, encode every chain
+independently with ESM-C, without chain separators or paired context:
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_esmc_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esmc600 `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --csv data\test\test-fabs.csv `
+  --skip-too-long `
+  --device cuda
+```
+
+Train with `+experiment=pcann_reimpl-esmc600`.
+
+### ESM-C 600M Native Multi-Chain Baseline
+
+ESM-C 600M uses a 1152-dimensional residue representation and the native `|`
+chain-break token at every real chain boundary. The default maximum token
+length is 2048.
+
+```powershell
+.venv\Scripts\python.exe scripts\data\run_esmc_pair_extraction.py `
+  data\raw\ppb-affinity\pdb `
+  --savedir data\raw\ppb-affinity\esmc600_paired_native_break `
+  --csv data\train\pcann-plus-trainval.csv `
+  --csv data\test\testAB-clean.csv `
+  --skip-too-long `
+  --device cuda
+```
+
+Train with `+experiment=pcann_reimpl-esmc600-paired-native-break-mc10`.
 
 ### Cached ESM2 LoRA Fine-Tuning
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, Sequence
 
 import gemmi
 import torch
@@ -17,6 +18,28 @@ class ChainSpan:
     chain_id: str
     start: int
     stop: int
+
+
+@dataclass(frozen=True)
+class ChainLinker:
+    source_chain: str
+    target_chain: str
+    terminal_distance_angstrom: float
+    target_length_angstrom: float
+    repeats: int
+    sequence: str
+
+
+LINKER_LENGTH_SCALE = math.pi / 2
+DEFAULT_LINKER_REPEAT = "GGGS"
+DEFAULT_RESIDUE_CONTOUR_LENGTH_ANGSTROM = 3.8
+
+
+class PairEncoder(Protocol):
+    model_name: str
+    embedding_size: int
+
+    def encode_pair(self, sequence_a: str, sequence_b: str, max_length: int) -> tuple[Tensor, Tensor]: ...
 
 
 class PlmInteractWrapper(nn.Module):
@@ -105,19 +128,68 @@ class PlmInteractPairEncoder:
         second_stop = second_start + len(sequence_b)
         return hidden[first_start:first_stop], hidden[second_start:second_stop]
 
+    def encode_linked_pair(
+        self,
+        sequence_a: str,
+        sequence_b: str,
+        linker: str,
+        max_length: int,
+    ) -> tuple[Tensor, Tensor]:
+        """Encode both proteins as one ESM2 sequence with a residue linker between them."""
+        combined_sequence = f"{sequence_a}{linker}{sequence_b}"
+        expected_length = len(combined_sequence) + 2
+        if expected_length > max_length:
+            raise ValueError(
+                f"linked sequence length {expected_length} exceeds max_length={max_length}; "
+                "increase --max-length or skip this item"
+            )
+
+        tokenized = self.tokenizer(
+            combined_sequence,
+            padding=False,
+            truncation=False,
+            return_tensors="pt",
+            max_length=max_length,
+        )
+        token_count = int(tokenized["input_ids"].shape[1])
+        if token_count != expected_length:
+            raise ValueError(
+                f"tokenized length {token_count} does not match expected linked ESM2 length {expected_length}"
+            )
+
+        features = {name: value.to(self.device) for name, value in tokenized.items()}
+        with torch.inference_mode():
+            output = self.model.esm_mask.base_model(**features, return_dict=True)
+        hidden = output.last_hidden_state[0].detach().cpu()
+
+        first_start = 1
+        first_stop = first_start + len(sequence_a)
+        second_start = first_stop + len(linker)
+        second_stop = second_start + len(sequence_b)
+        return hidden[first_start:first_stop], hidden[second_start:second_stop]
+
 
 def build_side_sequence(
     full_sequences: dict[str, str],
     chain_ids: list[str],
-    chain_separator: str,
+    chain_separator: str | Sequence[str],
 ) -> tuple[str, list[ChainSpan]]:
+    if isinstance(chain_separator, str):
+        separators = [chain_separator] * max(0, len(chain_ids) - 1)
+    else:
+        separators = list(chain_separator)
+        expected = max(0, len(chain_ids) - 1)
+        if len(separators) != expected:
+            raise ValueError(f"expected {expected} chain separators for {len(chain_ids)} chains, got {len(separators)}")
+
     parts: list[str] = []
     spans: list[ChainSpan] = []
     cursor = 0
     for index, chain_id in enumerate(chain_ids):
-        if index > 0 and chain_separator:
-            parts.append(chain_separator)
-            cursor += len(chain_separator)
+        if index > 0 and separators[index - 1]:
+            separator = separators[index - 1]
+            parts.append(separator)
+            cursor += len(separator)
 
         sequence = full_sequences[chain_id]
         start = cursor
@@ -127,6 +199,61 @@ def build_side_sequence(
         cursor = stop
 
     return "".join(parts), spans
+
+
+def _terminal_ca_position(
+    structure: gemmi.Structure,
+    chain_id: str,
+    terminus: Literal["start", "end"],
+) -> gemmi.Position:
+    chain = structure[0].find_chain(chain_id)
+    if chain is None:
+        raise KeyError(f"chain {chain_id!r} is missing from the structure model")
+
+    residues = list(chain.get_polymer())
+    if not residues:
+        # This fallback keeps the helper usable for minimal structures without
+        # entity/polymer annotations while still requiring an alpha carbon.
+        residues = list(chain)
+    ordered_residues = residues if terminus == "start" else reversed(residues)
+    for residue in ordered_residues:
+        ca = residue.find_atom("CA", "*")
+        if ca is not None:
+            return ca.pos
+
+    raise ValueError(f"chain {chain_id!r} has no polymer residue with a CA atom")
+
+
+def build_distance_aware_linkers(
+    structure: gemmi.Structure,
+    chain_ids: list[str],
+    repeat: str = DEFAULT_LINKER_REPEAT,
+    residue_contour_length_angstrom: float = DEFAULT_RESIDUE_CONTOUR_LENGTH_ANGSTROM,
+) -> list[ChainLinker]:
+    if not repeat:
+        raise ValueError("linker repeat must not be empty")
+    if residue_contour_length_angstrom <= 0:
+        raise ValueError("residue contour length must be positive")
+
+    repeat_length = len(repeat) * residue_contour_length_angstrom
+    linkers: list[ChainLinker] = []
+    for source_chain, target_chain in zip(chain_ids, chain_ids[1:], strict=False):
+        source_end = _terminal_ca_position(structure, source_chain, "end")
+        target_start = _terminal_ca_position(structure, target_chain, "start")
+        distance = source_end.dist(target_start)
+        target_length = distance * LINKER_LENGTH_SCALE
+        repeats = math.ceil(target_length / repeat_length)
+        linkers.append(
+            ChainLinker(
+                source_chain=source_chain,
+                target_chain=target_chain,
+                terminal_distance_angstrom=distance,
+                target_length_angstrom=target_length,
+                repeats=repeats,
+                sequence=repeat * repeats,
+            )
+        )
+    return linkers
 
 
 def split_side_embeddings(side_embeddings: Tensor, spans: list[ChainSpan]) -> dict[str, Tensor]:
@@ -180,13 +307,20 @@ def select_interface_chains(
 def encode_complex_embeddings(
     item: DataItem,
     structure: gemmi.Structure,
-    encoder: PlmInteractPairEncoder,
+    encoder: PairEncoder,
     max_length: int,
     chain_separator: str = "X",
     bidirectional_average: bool = False,
     chain_policy: Literal["all", "interface"] = "all",
     interface_radius: float = 5.0,
+    distance_aware_linker: bool = False,
+    inter_protein_distance_aware_linker: bool = False,
+    linker_repeat: str = DEFAULT_LINKER_REPEAT,
+    residue_contour_length_angstrom: float = DEFAULT_RESIDUE_CONTOUR_LENGTH_ANGSTROM,
 ) -> dict[str, Any]:
+    if inter_protein_distance_aware_linker and not distance_aware_linker:
+        raise ValueError("inter-protein distance-aware linker requires distance_aware_linker=True")
+
     full_sequences = get_full_sequences(structure)
     sequences = get_sequences(structure)
     alignment = get_alignment(structure)
@@ -209,21 +343,69 @@ def encode_complex_embeddings(
     else:
         raise ValueError(f"Unsupported chain_policy: {chain_policy}")
 
-    receptor_sequence, receptor_spans = build_side_sequence(full_sequences, receptor_chains, chain_separator)
-    ligand_sequence, ligand_spans = build_side_sequence(full_sequences, ligand_chains, chain_separator)
+    receptor_linkers: list[ChainLinker] = []
+    ligand_linkers: list[ChainLinker] = []
+    inter_protein_linkers: list[ChainLinker] = []
+    reverse_inter_protein_linkers: list[ChainLinker] = []
+    receptor_separators: str | list[str] = chain_separator
+    ligand_separators: str | list[str] = chain_separator
+    if distance_aware_linker:
+        receptor_linkers = build_distance_aware_linkers(
+            structure, receptor_chains, linker_repeat, residue_contour_length_angstrom
+        )
+        ligand_linkers = build_distance_aware_linkers(
+            structure, ligand_chains, linker_repeat, residue_contour_length_angstrom
+        )
+        receptor_separators = [linker.sequence for linker in receptor_linkers]
+        ligand_separators = [linker.sequence for linker in ligand_linkers]
+        if inter_protein_distance_aware_linker:
+            inter_protein_linkers = build_distance_aware_linkers(
+                structure,
+                [receptor_chains[-1], ligand_chains[0]],
+                linker_repeat,
+                residue_contour_length_angstrom,
+            )
 
-    receptor_embeddings, ligand_embeddings = encoder.encode_pair(receptor_sequence, ligand_sequence, max_length)
+    receptor_sequence, receptor_spans = build_side_sequence(full_sequences, receptor_chains, receptor_separators)
+    ligand_sequence, ligand_spans = build_side_sequence(full_sequences, ligand_chains, ligand_separators)
+
+    if inter_protein_distance_aware_linker:
+        encode_linked_pair = getattr(encoder, "encode_linked_pair", None)
+        if encode_linked_pair is None:
+            raise TypeError(f"{type(encoder).__name__} does not support residue-linked pair encoding")
+        receptor_embeddings, ligand_embeddings = encode_linked_pair(
+            receptor_sequence,
+            ligand_sequence,
+            inter_protein_linkers[0].sequence,
+            max_length,
+        )
+    else:
+        receptor_embeddings, ligand_embeddings = encoder.encode_pair(receptor_sequence, ligand_sequence, max_length)
     chain_embeddings = {
         **split_side_embeddings(receptor_embeddings, receptor_spans),
         **split_side_embeddings(ligand_embeddings, ligand_spans),
     }
 
     if bidirectional_average:
-        ligand_embeddings_rev, receptor_embeddings_rev = encoder.encode_pair(
-            ligand_sequence,
-            receptor_sequence,
-            max_length,
-        )
+        if inter_protein_distance_aware_linker:
+            reverse_inter_protein_linkers = build_distance_aware_linkers(
+                structure,
+                [ligand_chains[-1], receptor_chains[0]],
+                linker_repeat,
+                residue_contour_length_angstrom,
+            )
+            ligand_embeddings_rev, receptor_embeddings_rev = encode_linked_pair(
+                ligand_sequence,
+                receptor_sequence,
+                reverse_inter_protein_linkers[0].sequence,
+                max_length,
+            )
+        else:
+            ligand_embeddings_rev, receptor_embeddings_rev = encoder.encode_pair(
+                ligand_sequence,
+                receptor_sequence,
+                max_length,
+            )
         reverse_chain_embeddings = {
             **split_side_embeddings(receptor_embeddings_rev, receptor_spans),
             **split_side_embeddings(ligand_embeddings_rev, ligand_spans),
@@ -237,7 +419,21 @@ def encode_complex_embeddings(
         "metadata": {
             "model_name": encoder.model_name,
             "embedding_size": encoder.embedding_size,
-            "chain_separator": chain_separator,
+            "chain_separator": None if distance_aware_linker else chain_separator,
+            "distance_aware_linker": distance_aware_linker,
+            "inter_protein_distance_aware_linker": inter_protein_distance_aware_linker,
+            "pair_boundary": "distance_aware_linker" if inter_protein_distance_aware_linker else "eos",
+            "linker_repeat": linker_repeat if distance_aware_linker else None,
+            "linker_length_scale": LINKER_LENGTH_SCALE if distance_aware_linker else None,
+            "residue_contour_length_angstrom": (
+                residue_contour_length_angstrom if distance_aware_linker else None
+            ),
+            "receptor_linkers": [linker.__dict__ for linker in receptor_linkers],
+            "ligand_linkers": [linker.__dict__ for linker in ligand_linkers],
+            "inter_protein_linkers": [linker.__dict__ for linker in inter_protein_linkers],
+            "reverse_inter_protein_linkers": [
+                linker.__dict__ for linker in reverse_inter_protein_linkers
+            ],
             "bidirectional_average": bidirectional_average,
             "chain_policy": chain_policy,
             "interface_radius": interface_radius if chain_policy == "interface" else None,
@@ -245,6 +441,10 @@ def encode_complex_embeddings(
             "original_ligand_chains": item.ligand_chains,
             "encoded_receptor_chains": receptor_chains,
             "encoded_ligand_chains": ligand_chains,
-            "format": "plm-interact-pair-v1",
+            "format": (
+                "plm-interact-linked-single-v1"
+                if inter_protein_distance_aware_linker
+                else getattr(encoder, "output_format", "plm-interact-pair-v1")
+            ),
         },
     }

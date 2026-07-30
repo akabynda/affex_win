@@ -1,6 +1,5 @@
 # @package _global_
-# Frozen base ESM2 paired embeddings with a distance-aware GGGS chain linker and
-# bidirectional averaging over receptor-ligand and ligand-receptor orderings.
+# Classic PCANN with independently encoded ESM-C 600M chain embeddings.
 
 defaults:
   - _self_
@@ -14,9 +13,9 @@ datamodule:
   test_csv: data/test/testAB-clean.csv
   batch_size: 64
   graph_builder:
-    _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
+    _target_: affex.data.transform.graph_builder.ResidueInterfaceEsmGraphBuilder
     radius: 5.0
-    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_bidir
+    esm_dir: data/raw/ppb-affinity/esmc600
 
 trainer:
   max_epochs: 20
@@ -32,7 +31,7 @@ callbacks:
 
 lightning:
   model:
-    node_feature_dim: 1280
+    node_feature_dim: 1152
     node_vocab_size: null
     node_embedding_dim: 64
     num_layers: 2

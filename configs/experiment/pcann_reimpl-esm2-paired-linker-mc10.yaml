@@ -1,5 +1,5 @@
 # @package _global_
-# Frozen base ESM2 paired embeddings with a flexible G4S-style linker between
+# Frozen base ESM2 paired embeddings with a distance-aware GGGS linker between
 # chains on the same side of the pair.
 
 defaults:
@@ -16,7 +16,7 @@ datamodule:
   graph_builder:
     _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
     radius: 5.0
-    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_g4s3
+    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_distance_gggs
 
 trainer:
   max_epochs: 20

@@ -1,6 +1,5 @@
 # @package _global_
-# Frozen base ESM2 paired embeddings with a distance-aware GGGS chain linker and
-# bidirectional averaging over receptor-ligand and ligand-receptor orderings.
+# Frozen ESM-C 600M embeddings with native chain-break tokens at every boundary.
 
 defaults:
   - _self_
@@ -16,7 +15,7 @@ datamodule:
   graph_builder:
     _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
     radius: 5.0
-    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_bidir
+    plm_interact_dir: data/raw/ppb-affinity/esmc600_paired_native_break
 
 trainer:
   max_epochs: 20
@@ -32,7 +31,7 @@ callbacks:
 
 lightning:
   model:
-    node_feature_dim: 1280
+    node_feature_dim: 1152
     node_vocab_size: null
     node_embedding_dim: 64
     num_layers: 2

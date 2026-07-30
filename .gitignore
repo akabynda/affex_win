@@ -2,6 +2,7 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.log
 .ruff_cache/
 .pytest_cache/
 
@@ -10,6 +11,7 @@ __pycache__/
 /logs/
 /experiment_logs/
 /esm/
+/models/
 *.tar.gz
 
 # Inference outputs
