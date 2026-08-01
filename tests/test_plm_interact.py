@@ -84,3 +84,14 @@ def test_linked_pair_encoder_excludes_bos_linker_and_eos() -> None:
 
     assert first.flatten().tolist() == [1.0, 2.0]
     assert second.flatten().tolist() == [7.0, 8.0, 9.0]
+
+
+def test_single_sequence_encoder_excludes_bos_and_eos() -> None:
+    encoder = PlmInteractPairEncoder.__new__(PlmInteractPairEncoder)
+    encoder.device = torch.device("cpu")
+    encoder.tokenizer = _FakeTokenizer()
+    encoder.model = SimpleNamespace(esm_mask=SimpleNamespace(base_model=_FakeBaseModel()))
+
+    embeddings = encoder.encode_sequence("AAXBBB", max_length=9)
+
+    assert embeddings.flatten().tolist() == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

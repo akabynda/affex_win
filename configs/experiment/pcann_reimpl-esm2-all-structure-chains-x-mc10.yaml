@@ -1,7 +1,6 @@
 # @package _global_
-# Frozen base ESM2 paired embeddings with bidirectional averaging over
-# receptor-ligand and ligand-receptor orderings, keeping the classic X chain
-# separator inside multi-chain sides.
+# Frozen ESM-2 embeddings from one sequence containing every peptide chain in
+# structure-model order, separated by the residue token X.
 
 defaults:
   - _self_
@@ -13,7 +12,7 @@ datamodule:
   graph_builder:
     _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
     radius: 5.0
-    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_bidir
+    plm_interact_dir: data/raw/ppb-affinity/esm2_all_structure_chains_x
 
 lightning:
   model:

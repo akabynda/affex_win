@@ -9,14 +9,11 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-from esm import pretrained
 from tqdm import tqdm
 
 from affex.data.esm2 import embed_sequences
+from affex.data.model_sources import ESM2_MODEL
 from affex.data.transform.graph_builder import read_structure
-
-MODEL_NAME = "esm2_t33_650M_UR50D"
-REPR_LAYER = 33
 
 
 def uid_to_pdb_stems(uid: str) -> list[str]:
@@ -34,28 +31,41 @@ def stems_from_csvs(csv_paths: list[Path]) -> set[str]:
     return stems
 
 
-class InProcessEsmModel:
-    def __init__(self, device: torch.device, truncation_seq_length: int = 1022) -> None:
+class InProcessHuggingFaceEsmModel:
+    def __init__(self, model_name: str, device: torch.device, truncation_seq_length: int = 1022) -> None:
+        from transformers import AutoModel, AutoTokenizer
+
         self.device = device
-        self.model, self.alphabet = pretrained.load_model_and_alphabet(MODEL_NAME)
-        self.model.eval().to(device)
-        self.batch_converter = self.alphabet.get_batch_converter(truncation_seq_length)
+        self.truncation_seq_length = truncation_seq_length
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name).eval().to(device)
 
     def predict(self, sequence: str) -> torch.Tensor:
-        _, _, tokens = self.batch_converter([("seq", sequence)])
-        tokens = tokens.to(self.device)
+        truncated = sequence[: self.truncation_seq_length]
+        features = self.tokenizer(
+            truncated,
+            padding=False,
+            truncation=False,
+            return_tensors="pt",
+        )
+        features = {name: value.to(self.device) for name, value in features.items()}
         with torch.inference_mode():
-            output = self.model(tokens, repr_layers=[REPR_LAYER], return_contacts=False)
-        length = min(len(sequence), tokens.shape[1] - 2)
-        return output["representations"][REPR_LAYER][0, 1 : length + 1].detach().cpu()
+            output = self.model(**features, return_dict=True)
+        return output.last_hidden_state[0, 1 : len(truncated) + 1].detach().cpu()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract ESM2 embeddings for selected PDBs")
     parser.add_argument("pdb_dir", type=Path, help="Directory containing .pdb files")
-    parser.add_argument("--savedir", type=Path, default=Path("data/raw/ppb-affinity/esm"))
+    parser.add_argument(
+        "--savedir",
+        type=Path,
+        default=Path("data/raw/ppb-affinity/esm2_hf_per_chain"),
+    )
     parser.add_argument("--csv", type=Path, action="append", default=[], help="CSV containing a uid column")
     parser.add_argument("--device", default="auto", help="'auto', 'cpu', 'cuda', or any torch device string")
+    parser.add_argument("--model-name", default=str(ESM2_MODEL), help="Canonical local ESM-2 model")
+    parser.add_argument("--truncation-seq-length", type=int, default=1022)
     args = parser.parse_args()
 
     if args.device == "auto":
@@ -74,7 +84,12 @@ def main() -> None:
 
     print(f"Using device: {device}")
     print(f"Found {len(pdbs)} selected PDB files, {len(pdbs) - len(pending)} already processed, {len(pending)} to run")
-    model = InProcessEsmModel(device)
+    print(f"Hugging Face model: {args.model_name}")
+    model = InProcessHuggingFaceEsmModel(
+        args.model_name,
+        device,
+        truncation_seq_length=args.truncation_seq_length,
+    )
 
     errors: list[tuple[str, str]] = []
     for pdb_path in tqdm(pending):

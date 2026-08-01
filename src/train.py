@@ -15,6 +15,61 @@ from affex.model.lightning import Alpine
 log = logging.getLogger(__name__)
 
 
+def validate_training_protocol(cfg: DictConfig) -> None:
+    """Reject accidental changes to the canonical comparable-run settings."""
+    protocol = cfg.get("training_protocol")
+    if not protocol or not bool(protocol.get("enforce", False)):
+        return
+
+    optimizer = cfg.lightning.optimizer_fn
+    scheduler = cfg.lightning.lr_scheduler_fn
+    early_stopping = cfg.callbacks.early_stopping
+    actual = {
+        "seed": cfg.seed,
+        "datadir": cfg.datamodule.datadir,
+        "train_csv": cfg.datamodule.train_csv,
+        "folds_csv": cfg.datamodule.folds_csv,
+        "test_csv": cfg.datamodule.test_csv,
+        "batch_size": cfg.datamodule.batch_size,
+        "num_workers": cfg.datamodule.num_workers,
+        "graph_radius": cfg.datamodule.graph_builder.radius,
+        "accelerator": cfg.trainer.accelerator,
+        "devices": cfg.trainer.devices,
+        "max_epochs": cfg.trainer.max_epochs,
+        "check_val_every_n_epoch": cfg.trainer.check_val_every_n_epoch,
+        "deterministic": cfg.trainer.deterministic,
+        "accumulate_grad_batches": cfg.trainer.get("accumulate_grad_batches", 1),
+        "optimizer_target": optimizer._target_,
+        "learning_rate": optimizer.lr,
+        "weight_decay": optimizer.weight_decay,
+        "amsgrad": optimizer.get("amsgrad", False),
+        "scheduler_target": scheduler._target_,
+        "scheduler_patience": scheduler.patience,
+        "scheduler_factor": scheduler.factor,
+        "scheduler_min_lr": scheduler.min_lr,
+        "early_stopping_monitor": early_stopping.monitor,
+        "early_stopping_patience": early_stopping.patience,
+        "logger_target": cfg.logger._target_ if cfg.logger else None,
+    }
+    expected = OmegaConf.to_container(protocol.expected, resolve=True)
+    mismatches = {
+        key: (expected[key], actual.get(key))
+        for key in expected
+        if actual.get(key) != expected[key]
+    }
+    if mismatches:
+        details = ", ".join(
+            f"{key}: expected {wanted!r}, got {found!r}"
+            for key, (wanted, found) in mismatches.items()
+        )
+        raise ValueError(
+            f"Training protocol {protocol.name!r} was overridden ({details}). "
+            "Change configs/training_protocol/pcann_shared_gpu.yaml for all comparable "
+            "experiments, or explicitly mark an architecturally incompatible run "
+            "with training_protocol.enforce=false."
+        )
+
+
 def _log_process_memory(label: str) -> None:
     proc = psutil.Process(os.getpid())
     mem = proc.memory_info()
@@ -40,6 +95,7 @@ def _safe_experiment_call(logger, method_name: str, *args, **kwargs) -> None:
 
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")
 def train(cfg: DictConfig) -> None:
+    validate_training_protocol(cfg)
     callbacks = [hydra.utils.instantiate(cb_conf) for _, cb_conf in cfg.callbacks.items()] if cfg.callbacks else []
     logger = hydra.utils.instantiate(cfg.logger) if cfg.logger else False
     hparams = {
@@ -84,8 +140,14 @@ def train(cfg: DictConfig) -> None:
         datamodule=datamodule,
         ckpt_path=cfg.checkpoint,
     )
-    val_results = trainer.validate(model=lit, datamodule=datamodule, ckpt_path="best")
-    test_results = trainer.test(model=lit, datamodule=datamodule, ckpt_path="best")
+    skip_postfit_evaluation = bool(cfg.get("skip_postfit_evaluation", False))
+    if skip_postfit_evaluation:
+        val_results = []
+        test_results = []
+        log.info("Skipping post-fit validate/test; best checkpoint was still selected from epoch validation")
+    else:
+        val_results = trainer.validate(model=lit, datamodule=datamodule, ckpt_path="best")
+        test_results = trainer.test(model=lit, datamodule=datamodule, ckpt_path="best")
 
     if cfg.quiet:
         log.info("=== Final Metrics ===")

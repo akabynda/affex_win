@@ -37,6 +37,11 @@ def expand_inputs(patterns: list[str]) -> list[Path]:
 
     unique: dict[Path, None] = {}
     for path in paths:
+        # Linker diagnostics may contain target/pred columns for convenient
+        # joining, but they have multiple rows per complex and are not model
+        # prediction files.
+        if path.stem.lower().endswith("_linkers"):
+            continue
         unique[path.resolve()] = None
     return sorted(unique)
 

@@ -1,5 +1,6 @@
 defaults:
   - _self_
+  - training_protocol: pcann_shared_gpu
   - lightning: edgepool.yaml
 
 
@@ -19,7 +20,7 @@ datamodule:
   train_csv: data/train/pcann-plus-trainval.csv
   val_fold: 9
   test_csv: data/test/testAB-clean.csv
-  batch_size: 64
+  batch_size: 32
   foldx_dir: null
   num_workers: 4
   graph_builder:
@@ -72,7 +73,7 @@ callbacks:
 
 trainer:
   _target_: lightning.Trainer
-  accelerator: cpu  # cpu, gpu, mps
+  accelerator: gpu  # cpu, gpu, mps
   devices: 1
   max_epochs: 100
   log_every_n_steps: 10

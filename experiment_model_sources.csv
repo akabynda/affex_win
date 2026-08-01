@@ -1,0 +1,4 @@
+family,source,use
+ESM-2,models\esm2_t33_650M_UR50D,"all ESM-2 per-chain, paired, linker, all-chain, PLM-interact-base, and LoRA runs"
+ESM-C,models\esmc_600m_2024_12\esmc_600m_2024_12_v0.pth,all ESM-C per-chain and native-break paired runs
+PLM-interact adapter,danliu1226/PLM-interact-650M-Leakage-Free-Dataset -> models\plm_interact\pytorch_model.bin,fine-tuned weights over canonical base models\esm2_t33_650M_UR50D

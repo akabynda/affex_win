@@ -39,6 +39,7 @@ def main() -> None:
             continue
         metadata = torch.load(embedding_path, map_location="cpu", weights_only=False).get("metadata", {})
         linker_groups = (
+            ("structure", "structure_linkers"),
             ("receptor", "receptor_linkers"),
             ("ligand", "ligand_linkers"),
             ("inter_protein", "inter_protein_linkers"),

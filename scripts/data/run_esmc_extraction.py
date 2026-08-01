@@ -11,10 +11,11 @@ from tqdm import tqdm
 
 from affex.data.esm2 import embed_sequences
 from affex.data.esmc import EsmcPairEncoder
+from affex.data.model_sources import ESMC_LIBRARY, ESMC_WEIGHTS
 from affex.data.transform.graph_builder import read_structure
 
-DEFAULT_WEIGHTS = Path("models/esmc_600m_2024_12/esmc_600m_2024_12_v0.pth")
-DEFAULT_ESMC_LIBRARY = Path("models/biohub_esm_lib")
+DEFAULT_WEIGHTS = ESMC_WEIGHTS
+DEFAULT_ESMC_LIBRARY = ESMC_LIBRARY
 DEFAULT_SAVEDIR = Path("data/raw/ppb-affinity/esmc600")
 
 

@@ -43,6 +43,10 @@ class RadialBasisExpansion(nn.Module):
         num_gaussians: int = 32,
     ):
         super().__init__()
+        if num_gaussians < 2:
+            raise ValueError("num_gaussians must be at least 2")
+        if stop <= start:
+            raise ValueError("RBF stop must be greater than start")
         offset = torch.linspace(start, stop, num_gaussians)
         self.coeff = -0.5 / (offset[1] - offset[0]).item() ** 2
         self.register_buffer("offset", offset)
@@ -68,9 +72,20 @@ class EdgeConvLayer(nn.Module):
         )
 
     def forward(self, src, dest, edge_attr, u=None, batch=None):
-        out = torch.cat([src, dest, edge_attr], 1)
-        out = self.edge_mlp(out)
-        return out
+        # This is algebraically identical to Linear(cat(src, dest, edge_attr)),
+        # but avoids materializing a very large E x (2*node_dim+edge_dim)
+        # temporary tensor. The split form is important for RBF edge features
+        # on large interface-graph batches.
+        first_linear = self.edge_mlp[0]
+        node_dim = src.shape[1]
+        src_weight = first_linear.weight[:, :node_dim]
+        dest_weight = first_linear.weight[:, node_dim : 2 * node_dim]
+        edge_weight = first_linear.weight[:, 2 * node_dim :]
+        out = F.linear(src, src_weight, first_linear.bias)
+        out = out + F.linear(dest, dest_weight)
+        out = out + F.linear(edge_attr, edge_weight)
+        out = self.edge_mlp[1](out)
+        return self.edge_mlp[2](out)
 
 
 class KdModel_PoolEdges(BaseModel):
@@ -85,12 +100,27 @@ class KdModel_PoolEdges(BaseModel):
         linear_layer_edges: bool = False,
         batchnorm: bool = True,
         input_projection_dim: int | None = None,
+        distance_rbf_num_gaussians: int | None = None,
+        distance_rbf_start: float = 0.0,
+        distance_rbf_stop: float = 50.0,
         use_foldx: bool = False,
         foldx_dropout: float = 0.0,
         **kwargs,
     ):
         super().__init__()
         assert (node_vocab_size is None) ^ (node_feature_dim is None)
+
+        self.distance_rbf = None
+        if distance_rbf_num_gaussians is not None:
+            if edge_feature_dim != distance_rbf_num_gaussians:
+                raise ValueError(
+                    "edge_feature_dim must equal distance_rbf_num_gaussians when distance RBF is enabled"
+                )
+            self.distance_rbf = RadialBasisExpansion(
+                start=distance_rbf_start,
+                stop=distance_rbf_stop,
+                num_gaussians=distance_rbf_num_gaussians,
+            )
 
         self.num_layers = num_layers
         if node_vocab_size:
@@ -182,11 +212,11 @@ class KdModel_PoolEdges(BaseModel):
         )
 
     def forward(self, data: InterfaceGraph):
-        edge_index, edge_attr, batch = (
-            data.edge_index,
-            data.distances.view(-1, 1).float(),
-            data.batch,
-        )
+        edge_index = data.edge_index
+        edge_attr = data.distances.view(-1, 1).float()
+        if self.distance_rbf is not None:
+            edge_attr = self.distance_rbf(edge_attr)
+        batch = data.batch
         if hasattr(self, "node_embed"):
             if hasattr(data, 'atoms') and data.atoms is not None:
                 node_types = data.atoms

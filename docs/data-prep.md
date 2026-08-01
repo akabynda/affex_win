@@ -23,25 +23,19 @@ repo-relative paths (`logs/multiruns/EXP-043/…`, `data/raw/ppb-affinity/{pdb,e
 
 ## ESM2 embeddings from scratch
 
-The tarball already ships `data/raw/ppb-affinity/esm/<uid>.pt`. You only need this to
-embed **new** PDB structures. The model uses per-residue `esm2_t33_650M_UR50D`
-embeddings (layer 33), read directly as `.pt` files.
+All experiments use the same local Hugging Face checkpoint at
+`models/esm2_t33_650M_UR50D`. The model uses its per-residue final-layer
+embeddings, read directly as `.pt` files.
 
 ```bash
-# 1. Clone the ESM repo (weights auto-download on first run).
-git clone https://github.com/facebookresearch/esm
-export ESM_MODEL_DIR=$PWD/esm
-
-# 2. Extract embeddings for every .pdb in a directory.
-uv run python scripts/data/run_esm_extraction.py \
+# Extract embeddings for every selected structure.
+uv run python scripts/data/run_esm_extraction_inprocess.py \
   <pdb_dir> \
-  --savedir data/raw/ppb-affinity/esm \
-  --workers 2
+  --savedir data/raw/ppb-affinity/esm2_hf_per_chain \
+  --model-name models/esm2_t33_650M_UR50D
 ```
 
-`run_esm_extraction.py` resolves the model directory from `--esm-model-dir`, falling
-back to the `ESM_MODEL_DIR` environment variable; it errors if neither is set. It
-writes one `<uid>.pt` per structure and skips any that already exist.
+The extractor writes one `<uid>.pt` per structure and skips any that already exist.
 
 ## Annotation CSV columns
 

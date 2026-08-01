@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 from torch import Tensor, nn
 
+from affex.data.model_sources import ESM2_MODEL
 from affex.data.types import AtomicInterfacePredictor, InterfaceGraph
 
 
@@ -43,7 +44,7 @@ class CachedEsmLoraPcannModel(AtomicInterfacePredictor):
     def __init__(
         self,
         pcann: AtomicInterfacePredictor,
-        model_name: str = "facebook/esm2_t33_650M_UR50D",
+        model_name: str = str(ESM2_MODEL),
         tail_layers: int = 1,
         lora_rank: int = 4,
         lora_alpha: float = 8.0,

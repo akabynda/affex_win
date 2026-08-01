@@ -1,5 +1,6 @@
 # @package _global_
-# Classic PCANN with independently encoded ESM-C 600M chain embeddings.
+# Canonical PCANN/ESM-2 baseline with a 64-component Gaussian radial-basis
+# expansion of every inter-residue edge distance over 0..50 angstroms.
 
 defaults:
   - _self_
@@ -11,12 +12,16 @@ datamodule:
   graph_builder:
     _target_: affex.data.transform.graph_builder.ResidueInterfaceEsmGraphBuilder
     radius: 5.0
-    esm_dir: data/raw/ppb-affinity/esmc600
+    esm_dir: data/raw/ppb-affinity/esm2_hf_per_chain
 
 lightning:
   model:
-    node_feature_dim: 1152
+    node_feature_dim: 1280
     node_vocab_size: null
     node_embedding_dim: 64
+    edge_feature_dim: 64
+    distance_rbf_num_gaussians: 64
+    distance_rbf_start: 0.0
+    distance_rbf_stop: 50.0
     num_layers: 2
     use_foldx: false

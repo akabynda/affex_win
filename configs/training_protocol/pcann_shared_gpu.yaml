@@ -1,0 +1,78 @@
+# @package _global_
+# Single source of truth for all comparable PCANN experiments.
+# Experiment configs describe only their representation/model delta.
+
+training_protocol:
+  name: pcann_shared_gpu
+  enforce: true
+  expected:
+    seed: 42
+    datadir: data/raw/ppb-affinity/pdb
+    train_csv: data/train/pcann-plus-trainval.csv
+    folds_csv: data/train/folds_pcann_plus_ppisplit_mc25.csv
+    test_csv: data/test/testAB-clean.csv
+    batch_size: 32
+    num_workers: 4
+    graph_radius: 5.0
+    accelerator: gpu
+    devices: 1
+    max_epochs: 20
+    check_val_every_n_epoch: 1
+    deterministic: true
+    accumulate_grad_batches: 1
+    optimizer_target: torch.optim.Adam
+    learning_rate: 0.001
+    weight_decay: 0.003
+    amsgrad: true
+    scheduler_target: torch.optim.lr_scheduler.ReduceLROnPlateau
+    scheduler_patience: 10
+    scheduler_factor: 0.1
+    scheduler_min_lr: 1e-4
+    early_stopping_monitor: val/loss
+    early_stopping_patience: 20
+    logger_target: null
+
+seed: 42
+
+datamodule:
+  datadir: data/raw/ppb-affinity/pdb
+  train_csv: data/train/pcann-plus-trainval.csv
+  folds_csv: data/train/folds_pcann_plus_ppisplit_mc25.csv
+  test_csv: data/test/testAB-clean.csv
+  batch_size: 32
+  num_workers: 4
+  graph_builder:
+    radius: 5.0
+
+trainer:
+  accelerator: gpu
+  devices: 1
+  max_epochs: 20
+  check_val_every_n_epoch: 1
+  deterministic: true
+  accumulate_grad_batches: 1
+
+callbacks:
+  early_stopping:
+    monitor: val/loss
+    patience: 20
+    verbose: false
+    mode: min
+    strict: true
+
+lightning:
+  optimizer_fn:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: 0.001
+    weight_decay: 0.003
+    amsgrad: true
+
+  lr_scheduler_fn:
+    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+    _partial_: true
+    patience: 10
+    factor: 0.1
+    min_lr: 1e-4
+
+logger: null

@@ -12,11 +12,12 @@ from tqdm import tqdm
 
 from affex.data.esm2 import get_alignment, get_alignment_indices, get_full_sequences, get_sequences
 from affex.data.measurement import ExactMeasurement
+from affex.data.model_sources import ESM2_MODEL
 from affex.data.plm_interact import build_side_sequence
 from affex.data.transform.graph_builder import item_embedding_key, read_structure
 from affex.data.types import DataItem
 
-DEFAULT_MODEL_NAME = "facebook/esm2_t33_650M_UR50D"
+DEFAULT_MODEL_NAME = str(ESM2_MODEL)
 DEFAULT_SAVEDIR = "data/raw/ppb-affinity/esm2_pair_tail_cache"
 
 

@@ -11,12 +11,13 @@ from tqdm import tqdm
 
 from affex.data.esmc import EsmcPairEncoder
 from affex.data.measurement import ExactMeasurement
+from affex.data.model_sources import ESMC_LIBRARY, ESMC_WEIGHTS
 from affex.data.plm_interact import encode_complex_embeddings
 from affex.data.transform.graph_builder import item_embedding_key, read_structure
 from affex.data.types import DataItem
 
-DEFAULT_WEIGHTS = Path("models/esmc_600m_2024_12/esmc_600m_2024_12_v0.pth")
-DEFAULT_LIBRARY_DIR = Path("models/biohub_esm_lib")
+DEFAULT_WEIGHTS = ESMC_WEIGHTS
+DEFAULT_LIBRARY_DIR = ESMC_LIBRARY
 
 
 def chain_list(value: object) -> list[str]:

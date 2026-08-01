@@ -14,6 +14,7 @@ import torch
 from tqdm import tqdm
 
 from affex.data.measurement import ExactMeasurement
+from affex.data.model_sources import ESM2_MODEL, PLM_INTERACT_REPO
 from affex.data.plm_interact import (
     DEFAULT_LINKER_REPEAT,
     DEFAULT_RESIDUE_CONTOUR_LENGTH_ANGSTROM,
@@ -23,8 +24,8 @@ from affex.data.plm_interact import (
 from affex.data.transform.graph_builder import item_embedding_key, read_structure
 from affex.data.types import DataItem
 
-DEFAULT_MODEL_NAME = "facebook/esm2_t33_650M_UR50D"
-DEFAULT_CHECKPOINT_REPO = "danliu1226/PLM-interact-650M-Leakage-Free-Dataset"
+DEFAULT_MODEL_NAME = str(ESM2_MODEL)
+DEFAULT_CHECKPOINT_REPO = PLM_INTERACT_REPO
 DEFAULT_SAVEDIR = "data/raw/ppb-affinity/plm_interact"
 
 
@@ -65,6 +66,11 @@ def main() -> None:
     parser.add_argument("--max-length", type=int, default=1603)
     parser.add_argument("--chain-separator", default="X", help="Residues inserted between chains on the same side")
     parser.add_argument(
+        "--all-structure-chains",
+        action="store_true",
+        help="Encode all peptide chains in model order as one ESM-2 sequence",
+    )
+    parser.add_argument(
         "--distance-aware-linker",
         action="store_true",
         help="Size a separate linker for each chain boundary from its terminal CA distance",
@@ -86,24 +92,16 @@ def main() -> None:
         help="Contour length of one linker residue in angstroms",
     )
     parser.add_argument("--bidirectional-average", action="store_true", help="Average rec-lig and lig-rec encodings")
-    parser.add_argument(
-        "--chain-policy",
-        choices=["all", "interface"],
-        default="all",
-        help="Encode all requested chains, or only chains with cross-side interface contacts",
-    )
-    parser.add_argument(
-        "--interface-radius",
-        type=float,
-        default=5.0,
-        help="Contact radius for --chain-policy interface",
-    )
     parser.add_argument("--skip-too-long", action="store_true", help="Skip complexes exceeding --max-length")
     parser.add_argument("--device", default="auto", help="'auto', 'cpu', 'cuda', or any torch device string")
     parser.add_argument("--limit", type=int, default=None, help="Debug: process at most N pending complexes")
     args = parser.parse_args()
     if args.inter_protein_distance_aware_linker and not args.distance_aware_linker:
         parser.error("--inter-protein-distance-aware-linker requires --distance-aware-linker")
+    if args.all_structure_chains and args.inter_protein_distance_aware_linker:
+        parser.error("--all-structure-chains cannot use --inter-protein-distance-aware-linker")
+    if args.all_structure_chains and args.bidirectional_average:
+        parser.error("--all-structure-chains cannot use --bidirectional-average")
 
     if args.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -129,6 +127,7 @@ def main() -> None:
     print(f"Base model: {args.model_name}")
     print(f"PLM-interact checkpoint repo: {checkpoint_repo or '<none>'}")
     print(f"Chain separator: {args.chain_separator!r}")
+    print(f"All structure peptide chains in one sequence: {args.all_structure_chains}")
     print(f"Distance-aware linker: {args.distance_aware_linker}")
     print(
         "Inter-protein distance-aware linker instead of pair EOS: "
@@ -138,10 +137,6 @@ def main() -> None:
         print(f"Linker repeat: {args.linker_repeat!r}")
         print(f"Residue contour length: {args.residue_contour_length} A")
     print(f"Bidirectional average: {args.bidirectional_average}")
-    print(f"Chain policy: {args.chain_policy}")
-    if args.chain_policy == "interface":
-        print(f"Interface radius: {args.interface_radius}")
-
     encoder = PlmInteractPairEncoder(
         model_name=args.model_name,
         embedding_size=args.embedding_size,
@@ -162,12 +157,11 @@ def main() -> None:
                 max_length=args.max_length,
                 chain_separator=args.chain_separator,
                 bidirectional_average=args.bidirectional_average,
-                chain_policy=args.chain_policy,
-                interface_radius=args.interface_radius,
                 distance_aware_linker=args.distance_aware_linker,
                 inter_protein_distance_aware_linker=args.inter_protein_distance_aware_linker,
                 linker_repeat=args.linker_repeat,
                 residue_contour_length_angstrom=args.residue_contour_length,
+                all_structure_chains=args.all_structure_chains,
             )
             torch.save(embeddings, out_path)
         except ValueError as err:

@@ -103,30 +103,18 @@ For the shipped test sets only:
 ```powershell
 .venv\Scripts\python.exe scripts\data\run_esm_extraction_inprocess.py `
   data\raw\ppb-affinity\pdb `
-  --savedir data\raw\ppb-affinity\esm `
+  --savedir data\raw\ppb-affinity\esm2_hf_per_chain `
   --csv data\test\testAB-clean.csv `
   --csv data\test\test-fabs.csv `
   --device cuda
 ```
 
-This loads `esm2_t33_650M_UR50D` once, downloads the weights on first run, and
+This loads the canonical local `models/esm2_t33_650M_UR50D` once and
 saves embeddings under:
 
 ```text
-data/raw/ppb-affinity/esm/
+data/raw/ppb-affinity/esm2_hf_per_chain/
 ```
-
-You can also use the upstream-style extractor:
-
-```powershell
-git clone https://github.com/facebookresearch/esm
-.venv\Scripts\python.exe scripts\data\run_esm_extraction.py `
-  data\raw\ppb-affinity\pdb `
-  --savedir data\raw\ppb-affinity\esm `
-  --esm-model-dir esm
-```
-
-Add `--cpu` to force CPU extraction.
 
 ## Run Inference
 

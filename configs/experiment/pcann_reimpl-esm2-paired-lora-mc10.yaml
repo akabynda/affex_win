@@ -5,6 +5,12 @@
 defaults:
   - _self_
 
+# This run trains part of ESM-2 and cannot use the frozen-embedding PCANN
+# protocol's batch size/optimizer. Keep it visibly outside comparable ablations.
+training_protocol:
+  enforce: false
+  non_comparable_reason: end-to-end LoRA tail training requires batch_size=1
+
 datamodule:
   datadir: data/raw/ppb-affinity/pdb
   train_csv: data/train/pcann-plus-trainval.csv
@@ -19,6 +25,8 @@ datamodule:
     cache_dir: data/raw/ppb-affinity/esm2_pair_tail_cache_l1
 
 trainer:
+  accelerator: gpu
+  devices: 1
   max_epochs: 5
   check_val_every_n_epoch: 1
   accumulate_grad_batches: 16
@@ -36,7 +44,7 @@ callbacks:
 lightning:
   model:
     _target_: affex.model.esm_lora_pcann.CachedEsmLoraPcannModel
-    model_name: facebook/esm2_t33_650M_UR50D
+    model_name: models/esm2_t33_650M_UR50D
     tail_layers: 1
     lora_targets:
       - query
@@ -47,7 +55,7 @@ lightning:
     lora_lr: 0.00001
     train_pcann: false
     pcann_lr: 0.00001
-    pcann_checkpoint_dir: logs/multiruns/ESM2-PAIRED-FULL-42/fold${datamodule.val_fold}_seed${seed}/checkpoints
+    pcann_checkpoint_dir: logs/multiruns/GPU-esm2_paired-42/fold${datamodule.val_fold}_seed${seed}/checkpoints
     pcann:
       _target_: affex.model.pcann.KdModel_PoolEdges
       node_feature_dim: 1280
