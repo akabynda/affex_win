@@ -425,6 +425,14 @@ def summarize(python: str) -> None:
         ],
         "summary",
     )
+    run(
+        [
+            python,
+            "scripts/data/add_membrane_errors.py",
+            "predictions_*.csv",
+        ],
+        "summary/membrane_errors",
+    )
 
 
 def main() -> None:
