@@ -102,7 +102,7 @@ class KdModel_PoolEdges(BaseModel):
         input_projection_dim: int | None = None,
         distance_rbf_num_gaussians: int | None = None,
         distance_rbf_start: float = 0.0,
-        distance_rbf_stop: float = 50.0,
+        distance_rbf_stop: float = 5.0,
         use_foldx: bool = False,
         foldx_dropout: float = 0.0,
         **kwargs,

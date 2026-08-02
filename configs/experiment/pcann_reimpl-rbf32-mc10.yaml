@@ -1,6 +1,6 @@
 # @package _global_
 # Canonical PCANN/ESM-2 baseline with a 32-component Gaussian radial-basis
-# expansion of every inter-residue edge distance over 0..50 angstroms.
+# expansion of every inter-residue edge distance over the graph's 0..5 A range.
 
 defaults:
   - _self_
@@ -22,6 +22,6 @@ lightning:
     edge_feature_dim: 32
     distance_rbf_num_gaussians: 32
     distance_rbf_start: 0.0
-    distance_rbf_stop: 50.0
+    distance_rbf_stop: 5.0
     num_layers: 2
     use_foldx: false

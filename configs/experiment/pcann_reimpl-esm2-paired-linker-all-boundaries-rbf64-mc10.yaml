@@ -1,6 +1,6 @@
 # @package _global_
-# Canonical PCANN/ESM-2 baseline with a 64-component Gaussian radial-basis
-# expansion of every inter-residue edge distance over the graph's 0..5 A range.
+# Frozen ESM-2 embeddings with distance-aware GGGS linkers at every chain
+# boundary and a 64-component Gaussian expansion of graph distances over 0..5 A.
 
 defaults:
   - _self_
@@ -10,9 +10,9 @@ defaults:
 datamodule:
   val_fold: 0
   graph_builder:
-    _target_: affex.data.transform.graph_builder.ResidueInterfaceEsmGraphBuilder
+    _target_: affex.data.transform.graph_builder.ResidueInterfacePlmInteractGraphBuilder
     radius: 5.0
-    esm_dir: data/raw/ppb-affinity/esm2_hf_per_chain
+    plm_interact_dir: data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_all_boundaries
 
 lightning:
   model:

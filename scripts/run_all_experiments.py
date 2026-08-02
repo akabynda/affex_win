@@ -51,8 +51,8 @@ class Experiment:
 
 EXPERIMENTS = (
     Experiment("pcann_reimpl-mc10", "GPU-pcann-42", "pcann"),
-    Experiment("pcann_reimpl-rbf32-mc10", "GPU-rbf32-42", "pcann_esm2_rbf32"),
-    Experiment("pcann_reimpl-rbf64-mc10", "GPU-rbf64-42", "pcann_esm2_rbf64"),
+    Experiment("pcann_reimpl-rbf32-mc10", "GPU-rbf32-r05-42", "pcann_esm2_rbf32"),
+    Experiment("pcann_reimpl-rbf64-mc10", "GPU-rbf64-r05-42", "pcann_esm2_rbf64"),
     Experiment("pcann_reimpl-plm-interact-mc10", "GPU-plm_interact-42", "plm_interact"),
     Experiment("pcann_reimpl-esm2-paired-mc10", "GPU-esm2_paired-42", "esm2_paired"),
     Experiment(
@@ -69,6 +69,11 @@ EXPERIMENTS = (
         "pcann_reimpl-esm2-paired-linker-all-boundaries-mc10",
         "GPU-esm2_paired_linker_distance_gggs_all_boundaries-42",
         "esm2_paired_linker_distance_gggs_all_boundaries",
+    ),
+    Experiment(
+        "pcann_reimpl-esm2-paired-linker-all-boundaries-rbf64-mc10",
+        "GPU-esm2_paired_linker_distance_gggs_all_boundaries_rbf64-42",
+        "esm2_paired_linker_distance_gggs_all_boundaries_rbf64",
     ),
     Experiment(
         "pcann_reimpl-esm2-all-structure-chains-x-mc10",
@@ -100,6 +105,9 @@ LINKER_DIRS = {
         "data/raw/ppb-affinity/esm2_paired_linker_distance_gggs"
     ),
     "esm2_paired_linker_distance_gggs_all_boundaries": Path(
+        "data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_all_boundaries"
+    ),
+    "esm2_paired_linker_distance_gggs_all_boundaries_rbf64": Path(
         "data/raw/ppb-affinity/esm2_paired_linker_distance_gggs_all_boundaries"
     ),
     "esm2_all_structure_chains_distance_gggs": Path(
@@ -357,8 +365,8 @@ def write_model_source_manifest() -> None:
         )
 
 
-def train_all(python: str) -> None:
-    for experiment in EXPERIMENTS:
+def train_all(python: str, experiments: Sequence[Experiment] = EXPERIMENTS) -> None:
+    for experiment in experiments:
         run(
             [
                 python,
@@ -376,8 +384,8 @@ def train_all(python: str) -> None:
         )
 
 
-def test_all(python: str) -> None:
-    for experiment in EXPERIMENTS:
+def test_all(python: str, experiments: Sequence[Experiment] = EXPERIMENTS) -> None:
+    for experiment in experiments:
         checkpoint_dir = Path("logs/multiruns") / experiment.group
         for test_name, test_csv in TESTS.items():
             output = Path(f"predictions_{experiment.approach}_{test_name}.csv")
@@ -443,6 +451,12 @@ def main() -> None:
         action="store_true",
         help="Reuse existing embedding caches and resume from 25-fold training",
     )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="APPROACH",
+        help="Train and test only the named registered approaches",
+    )
     args = parser.parse_args()
     python = sys.executable
 
@@ -454,14 +468,22 @@ def main() -> None:
             print(f"Pipeline valid: {len(EXPERIMENTS)} experiments, 25 folds each")
             return
 
+        experiments = EXPERIMENTS
+        if args.only:
+            requested = set(args.only)
+            experiments = tuple(experiment for experiment in EXPERIMENTS if experiment.approach in requested)
+            unknown = requested - {experiment.approach for experiment in experiments}
+            if unknown:
+                raise ValueError("Unknown approaches requested with --only: " + ", ".join(sorted(unknown)))
+
         write_model_source_manifest()
         if not args.skip_preprocessing:
             for stage, command in preprocessing_commands(python):
                 run(command, stage)
-        train_all(python)
-        test_all(python)
+        train_all(python, experiments)
+        test_all(python, experiments)
         summarize(python)
-        write_status("complete", "complete", experiments=len(EXPERIMENTS))
+        write_status("complete", "complete", experiments=len(experiments))
         print(f"[{now()}] Full pipeline complete", flush=True)
     except BaseException as error:
         write_status("failed", "failed", error=repr(error))

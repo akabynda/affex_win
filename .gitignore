@@ -5,6 +5,7 @@ __pycache__/
 *.log
 .ruff_cache/
 .pytest_cache/
+.env
 
 # Fetched out-of-band artifacts (from `make data` — see data/README.md)
 /data/raw/ppb-affinity/
@@ -17,6 +18,7 @@ __pycache__/
 # Inference outputs
 /predictions_*.csv
 /esm_extract*.log
+pipeline_status.json
 
 # OS cruft
 .DS_Store
