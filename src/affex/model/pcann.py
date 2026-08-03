@@ -109,6 +109,9 @@ class KdModel_PoolEdges(BaseModel):
     ):
         super().__init__()
         assert (node_vocab_size is None) ^ (node_feature_dim is None)
+        if edge_feature_dim < 0:
+            raise ValueError("edge_feature_dim must be non-negative")
+        self.initial_edge_feature_dim = edge_feature_dim
 
         self.distance_rbf = None
         if distance_rbf_num_gaussians is not None:
@@ -213,9 +216,6 @@ class KdModel_PoolEdges(BaseModel):
 
     def forward(self, data: InterfaceGraph):
         edge_index = data.edge_index
-        edge_attr = data.distances.view(-1, 1).float()
-        if self.distance_rbf is not None:
-            edge_attr = self.distance_rbf(edge_attr)
         batch = data.batch
         if hasattr(self, "node_embed"):
             if hasattr(data, 'atoms') and data.atoms is not None:
@@ -229,6 +229,16 @@ class KdModel_PoolEdges(BaseModel):
             x = data.residue_features
             if hasattr(self, "input_proj"):
                 x = self.input_proj(x)
+
+        if self.initial_edge_feature_dim == 0:
+            # The contact topology remains, but no measured edge value is
+            # exposed to the network. The first edge state is learned only
+            # from the two endpoint node embeddings.
+            edge_attr = x.new_empty((edge_index.shape[1], 0))
+        else:
+            edge_attr = data.distances.view(-1, 1).float()
+            if self.distance_rbf is not None:
+                edge_attr = self.distance_rbf(edge_attr)
 
         for i, conv in enumerate(self.convs):
             h, edge_attr, _ = conv(x, edge_index, edge_attr=edge_attr)

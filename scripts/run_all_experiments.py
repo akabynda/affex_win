@@ -24,6 +24,7 @@ sys.path.insert(0, str(SRC))
 
 from affex.data.model_sources import (  # noqa: E402
     ESM2_MODEL,
+    ESM3_WEIGHTS,
     ESMC_LIBRARY,
     ESMC_WEIGHTS,
     PLM_INTERACT_CHECKPOINT,
@@ -53,6 +54,12 @@ EXPERIMENTS = (
     Experiment("pcann_reimpl-mc10", "GPU-pcann-42", "pcann"),
     Experiment("pcann_reimpl-rbf32-mc10", "GPU-rbf32-r05-42", "pcann_esm2_rbf32"),
     Experiment("pcann_reimpl-rbf64-mc10", "GPU-rbf64-r05-42", "pcann_esm2_rbf64"),
+    Experiment(
+        "pcann_reimpl-esm2-no-edge-features-mc10",
+        "GPU-pcann_esm2_no_edge_features-42",
+        "pcann_esm2_no_edge_features",
+    ),
+    Experiment("pcann_reimpl-esm3", "GPU-pcann_esm3-42", "pcann_esm3"),
     Experiment("pcann_reimpl-plm-interact-mc10", "GPU-plm_interact-42", "plm_interact"),
     Experiment("pcann_reimpl-esm2-paired-mc10", "GPU-esm2_paired-42", "esm2_paired"),
     Experiment(
@@ -113,6 +120,31 @@ LINKER_DIRS = {
     "esm2_all_structure_chains_distance_gggs": Path(
         "data/raw/ppb-affinity/esm2_all_structure_chains_distance_gggs"
     ),
+}
+
+PREPROCESSING_STAGES_BY_APPROACH = {
+    "pcann": {"extract/esm2_per_chain"},
+    "pcann_esm2_rbf32": {"extract/esm2_per_chain"},
+    "pcann_esm2_rbf64": {"extract/esm2_per_chain"},
+    "pcann_esm2_no_edge_features": {"extract/esm2_per_chain"},
+    "pcann_esm3": {"extract/esm3_per_chain"},
+    "plm_interact": {"extract/plm_interact"},
+    "esm2_paired": {"extract/esm2_paired"},
+    "esm2_paired_bidir": {"extract/esm2_paired_bidir"},
+    "esm2_paired_linker_distance_gggs": {"extract/esm2_paired_linker_distance_gggs"},
+    "esm2_paired_linker_distance_gggs_all_boundaries": {
+        "extract/esm2_paired_linker_distance_gggs_all_boundaries"
+    },
+    "esm2_paired_linker_distance_gggs_all_boundaries_rbf64": {
+        "extract/esm2_paired_linker_distance_gggs_all_boundaries"
+    },
+    "esm2_all_structure_chains_x": {"extract/esm2_all_structure_chains_x"},
+    "esm2_all_structure_chains_distance_gggs": {
+        "extract/esm2_all_structure_chains_distance_gggs"
+    },
+    "pcann_esmc600": {"extract/esmc600_per_chain"},
+    "esmc600_paired_native_break": {"extract/esmc600_paired_native_break"},
+    "esm2_paired_lora": {"extract/esm2_lora_tail_cache"},
 }
 
 
@@ -266,6 +298,26 @@ def preprocessing_commands(python: str) -> list[tuple[str, list[str]]]:
             ],
         ),
         (
+            "extract/esm3_per_chain",
+            [
+                python,
+                "scripts/data/run_esm3_extraction.py",
+                str(PDB_DIR),
+                *csv_arguments(),
+                "--savedir",
+                "data/raw/ppb-affinity/esm3_per_chain",
+                "--weights",
+                str(ESM3_WEIGHTS),
+                "--esm-library-dir",
+                str(ESMC_LIBRARY),
+                "--max-length",
+                "2048",
+                "--skip-too-long",
+                "--device",
+                "auto",
+            ],
+        ),
+        (
             "extract/esmc600_per_chain",
             [
                 python,
@@ -305,7 +357,7 @@ def preprocessing_commands(python: str) -> list[tuple[str, list[str]]]:
 
 
 def validate_pipeline(python: str) -> None:
-    required = [PDB_DIR, *ALL_CSVS, ESM2_MODEL, ESMC_WEIGHTS, ESMC_LIBRARY]
+    required = [PDB_DIR, *ALL_CSVS, ESM2_MODEL, ESM3_WEIGHTS, ESMC_WEIGHTS, ESMC_LIBRARY]
     missing = [str(path) for path in required if not (ROOT / path).exists()]
     if missing:
         raise FileNotFoundError("Missing pipeline inputs: " + ", ".join(missing))
@@ -318,6 +370,10 @@ def validate_pipeline(python: str) -> None:
             f"Experiment registry mismatch; undeclared={sorted(discovered - declared)}, "
             f"missing={sorted(declared - discovered)}"
         )
+
+    approaches = {experiment.approach for experiment in EXPERIMENTS}
+    if set(PREPROCESSING_STAGES_BY_APPROACH) != approaches:
+        raise RuntimeError("Preprocessing registry does not cover every experiment approach")
 
     forbidden = {
         "pcann_reimpl-esm2-paired-linker-mc10",
@@ -347,6 +403,13 @@ def write_model_source_manifest() -> None:
                 "family": "ESM-2",
                 "source": str(ESM2_MODEL),
                 "use": "all ESM-2 per-chain, paired, linker, all-chain, PLM-interact-base, and LoRA runs",
+            }
+        )
+        writer.writerow(
+            {
+                "family": "ESM-3",
+                "source": str(ESM3_WEIGHTS),
+                "use": "sequence-only independent per-chain ESM3-sm-open-v1 embeddings",
             }
         )
         writer.writerow(
@@ -478,7 +541,13 @@ def main() -> None:
 
         write_model_source_manifest()
         if not args.skip_preprocessing:
-            for stage, command in preprocessing_commands(python):
+            commands = preprocessing_commands(python)
+            if args.only:
+                required_stages = set().union(
+                    *(PREPROCESSING_STAGES_BY_APPROACH[experiment.approach] for experiment in experiments)
+                )
+                commands = [(stage, command) for stage, command in commands if stage in required_stages]
+            for stage, command in commands:
                 run(command, stage)
         train_all(python, experiments)
         test_all(python, experiments)

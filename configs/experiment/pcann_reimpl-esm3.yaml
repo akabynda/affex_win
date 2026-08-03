@@ -1,0 +1,22 @@
+# @package _global_
+# Classic PCANN with independent sequence-only ESM3-sm-open-v1 embeddings.
+
+defaults:
+  - _self_
+  - override /training_protocol: pcann_shared_gpu
+  - override /lightning: edgepool.yaml
+
+datamodule:
+  val_fold: 0
+  graph_builder:
+    _target_: affex.data.transform.graph_builder.ResidueInterfaceEsmGraphBuilder
+    radius: 5.0
+    esm_dir: data/raw/ppb-affinity/esm3_per_chain
+
+lightning:
+  model:
+    node_feature_dim: 1536
+    node_vocab_size: null
+    node_embedding_dim: 64
+    num_layers: 2
+    use_foldx: false

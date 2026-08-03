@@ -1,0 +1,23 @@
+# @package _global_
+# ESM-2 PCANN ablation with contact topology but no initial edge attributes.
+
+defaults:
+  - _self_
+  - override /training_protocol: pcann_shared_gpu
+  - override /lightning: edgepool.yaml
+
+datamodule:
+  val_fold: 0
+  graph_builder:
+    _target_: affex.data.transform.graph_builder.ResidueInterfaceEsmGraphBuilder
+    radius: 5.0
+    esm_dir: data/raw/ppb-affinity/esm2_hf_per_chain
+
+lightning:
+  model:
+    node_feature_dim: 1280
+    node_vocab_size: null
+    node_embedding_dim: 64
+    edge_feature_dim: 0
+    num_layers: 2
+    use_foldx: false

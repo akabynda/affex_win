@@ -48,3 +48,25 @@ def test_pcann_forward_accepts_rbf_edge_features() -> None:
     )
 
     assert model(graph).shape == (1, 1)
+
+
+def test_pcann_forward_without_initial_edge_features() -> None:
+    model = KdModel_PoolEdges(
+        node_feature_dim=3,
+        node_vocab_size=None,
+        node_embedding_dim=4,
+        edge_feature_dim=0,
+        num_layers=1,
+        heads=1,
+        add_self_loops=False,
+        concat=False,
+        bias=True,
+        batchnorm=False,
+    )
+    graph = Data(
+        residue_features=torch.randn(4, 3),
+        edge_index=torch.tensor([[0, 1, 2, 3], [2, 3, 0, 1]]),
+        batch=torch.zeros(4, dtype=torch.long),
+    )
+
+    assert model(graph).shape == (1, 1)
