@@ -1,7 +1,12 @@
 import torch
 from torch_geometric.data import Data
 
-from affex.model.pcann import EdgeConvLayer, KdModel_PoolEdges, RadialBasisExpansion
+from affex.model.pcann import (
+    EdgeConvLayer,
+    KdModel_PoolEdges,
+    RadialBasisExpansion,
+    RelativeWidthRadialBasisExpansion,
+)
 
 
 def test_memory_efficient_edge_conv_matches_concatenated_linear() -> None:
@@ -22,6 +27,20 @@ def test_rbf_expansion_peaks_at_its_centers() -> None:
 
     assert values.shape == (5, 5)
     assert torch.equal(values.argmax(dim=1), torch.arange(5))
+
+
+def test_relative_rbf_uses_ten_percent_sigma() -> None:
+    rbf = RelativeWidthRadialBasisExpansion(
+        start=0.0,
+        stop=20.0,
+        num_gaussians=21,
+        sigma_fraction=0.10,
+    )
+    values = rbf(torch.tensor([10.0]))[0]
+
+    torch.testing.assert_close(values[10], torch.tensor(1.0))
+    torch.testing.assert_close(values[9], torch.tensor(0.60653067))
+    torch.testing.assert_close(values[11], torch.tensor(0.60653067))
 
 
 def test_pcann_forward_accepts_rbf_edge_features() -> None:

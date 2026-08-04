@@ -1,6 +1,6 @@
 # @package _global_
-# Canonical PCANN/ESM-2 baseline with a 64-component Gaussian radial-basis
-# expansion over 0..50 A, covering 99.92% of train C-alpha kNN edges.
+# Classic PCANN using the arithmetic centroid of residue C/N/O/S atoms instead
+# of C-alpha as the node coordinate.
 
 defaults:
   - _self_
@@ -13,15 +13,12 @@ datamodule:
     _target_: affex.data.transform.graph_builder.ResidueInterfaceEsmGraphBuilder
     radius: 5.0
     esm_dir: data/raw/ppb-affinity/esm2_hf_per_chain
+    coordinate_mode: heavy_atom_centroid
 
 lightning:
   model:
     node_feature_dim: 1280
     node_vocab_size: null
     node_embedding_dim: 64
-    edge_feature_dim: 64
-    distance_rbf_num_gaussians: 64
-    distance_rbf_start: 0.0
-    distance_rbf_stop: 50.0
     num_layers: 2
     use_foldx: false

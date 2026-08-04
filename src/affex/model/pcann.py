@@ -39,7 +39,7 @@ class RadialBasisExpansion(nn.Module):
     def __init__(
         self,
         start: float = 0.0,
-        stop: float = 5.0,
+        stop: float = 50.0,
         num_gaussians: int = 32,
     ):
         super().__init__()
@@ -54,6 +54,35 @@ class RadialBasisExpansion(nn.Module):
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
         dist = dist.view(-1, 1) - self.offset.view(1, -1)
         return torch.exp(self.coeff * torch.pow(dist, 2))
+
+
+class RelativeWidthRadialBasisExpansion(nn.Module):
+    """Gaussian distance basis with an edge-specific relative uncertainty."""
+
+    offset: torch.Tensor
+
+    def __init__(
+        self,
+        start: float = 0.0,
+        stop: float = 50.0,
+        num_gaussians: int = 64,
+        sigma_fraction: float = 0.10,
+    ) -> None:
+        super().__init__()
+        if num_gaussians < 2:
+            raise ValueError("num_gaussians must be at least 2")
+        if stop <= start:
+            raise ValueError("RBF stop must be greater than start")
+        if sigma_fraction <= 0:
+            raise ValueError("sigma_fraction must be positive")
+        self.sigma_fraction = sigma_fraction
+        self.register_buffer("offset", torch.linspace(start, stop, num_gaussians))
+
+    def forward(self, dist: torch.Tensor) -> torch.Tensor:
+        dist = dist.view(-1, 1)
+        sigma = dist.abs().mul(self.sigma_fraction).clamp_min(torch.finfo(dist.dtype).eps)
+        standardized = (dist - self.offset.view(1, -1)) / sigma
+        return torch.exp(-0.5 * standardized.pow(2))
 
 
 class EdgeConvLayer(nn.Module):
@@ -102,7 +131,8 @@ class KdModel_PoolEdges(BaseModel):
         input_projection_dim: int | None = None,
         distance_rbf_num_gaussians: int | None = None,
         distance_rbf_start: float = 0.0,
-        distance_rbf_stop: float = 5.0,
+        distance_rbf_stop: float = 50.0,
+        distance_rbf_relative_sigma_fraction: float | None = None,
         use_foldx: bool = False,
         foldx_dropout: float = 0.0,
         **kwargs,
@@ -119,10 +149,19 @@ class KdModel_PoolEdges(BaseModel):
                 raise ValueError(
                     "edge_feature_dim must equal distance_rbf_num_gaussians when distance RBF is enabled"
                 )
-            self.distance_rbf = RadialBasisExpansion(
+            expansion = (
+                RelativeWidthRadialBasisExpansion
+                if distance_rbf_relative_sigma_fraction is not None
+                else RadialBasisExpansion
+            )
+            expansion_kwargs = {}
+            if distance_rbf_relative_sigma_fraction is not None:
+                expansion_kwargs["sigma_fraction"] = distance_rbf_relative_sigma_fraction
+            self.distance_rbf = expansion(
                 start=distance_rbf_start,
                 stop=distance_rbf_stop,
                 num_gaussians=distance_rbf_num_gaussians,
+                **expansion_kwargs,
             )
 
         self.num_layers = num_layers

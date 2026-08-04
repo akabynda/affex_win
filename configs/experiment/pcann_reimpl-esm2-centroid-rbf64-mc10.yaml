@@ -1,6 +1,5 @@
 # @package _global_
-# Canonical PCANN/ESM-2 baseline with a 64-component Gaussian radial-basis
-# expansion over 0..50 A, covering 99.92% of train C-alpha kNN edges.
+# Heavy-atom residue centroids with the standard fixed-width 0..50 A RBF64.
 
 defaults:
   - _self_
@@ -13,6 +12,7 @@ datamodule:
     _target_: affex.data.transform.graph_builder.ResidueInterfaceEsmGraphBuilder
     radius: 5.0
     esm_dir: data/raw/ppb-affinity/esm2_hf_per_chain
+    coordinate_mode: heavy_atom_centroid
 
 lightning:
   model:

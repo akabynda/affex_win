@@ -1,6 +1,6 @@
 # @package _global_
 # Frozen ESM-2 embeddings with distance-aware GGGS linkers at every chain
-# boundary and a 64-component Gaussian expansion of graph distances over 0..5 A.
+# boundary and a 64-component Gaussian expansion of graph distances over 0..50 A.
 
 defaults:
   - _self_
@@ -22,6 +22,6 @@ lightning:
     edge_feature_dim: 64
     distance_rbf_num_gaussians: 64
     distance_rbf_start: 0.0
-    distance_rbf_stop: 5.0
+    distance_rbf_stop: 50.0
     num_layers: 2
     use_foldx: false

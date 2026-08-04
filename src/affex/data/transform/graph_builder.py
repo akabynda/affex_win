@@ -195,9 +195,24 @@ class ResidueInterfaceGraphBuilder(InterfaceGraphBuilder):
 
 
 class ResidueInterfaceEsmGraphBuilder(InterfaceGraphBuilder):
-    def __init__(self, radius: float, esm_dir: Path) -> None:
+    def __init__(self, radius: float, esm_dir: Path, coordinate_mode: str = "ca") -> None:
+        if coordinate_mode not in {"ca", "heavy_atom_centroid"}:
+            raise ValueError(f"unsupported residue coordinate mode: {coordinate_mode}")
         self.radius = radius
         self.esm_dir = Path(esm_dir)
+        self.coordinate_mode = coordinate_mode
+
+    def residue_coordinate(self, residue: gemmi.Residue) -> list[float]:
+        if self.coordinate_mode == "ca":
+            return residue.get_ca().pos.tolist()
+        positions = [
+            atom.pos.tolist()
+            for atom in residue
+            if atom.element.name in {"C", "N", "O", "S"}
+        ]
+        if not positions:
+            raise ValueError(f"residue {residue.name} {residue.seqid} has no C/N/O/S heavy atoms")
+        return torch.tensor(positions, dtype=torch.float32).mean(dim=0).tolist()
 
     def build_graph(self, item: DataItem) -> InterfaceGraph | None:
         structure = read_structure(item.pdb)
@@ -226,7 +241,10 @@ class ResidueInterfaceEsmGraphBuilder(InterfaceGraphBuilder):
             RESIDUE_INDICES.get(gemmi.one_letter_code([residue.name]), 0) for residue, _ in residue_to_id.keys()
         ]
         receptor_mask = torch.tensor([int(chain_id in item.receptor_chains) for _, chain_id in residue_to_id.keys()])
-        coordinates = torch.tensor([res.get_ca().pos.tolist() for res, _ in residue_to_id.keys()], dtype=torch.float32)
+        coordinates = torch.tensor(
+            [self.residue_coordinate(res) for res, _ in residue_to_id.keys()],
+            dtype=torch.float32,
+        )
 
         # NOTE: only contacts -> complete bipartite graph
         # edge_index = [(residue_to_id[src], residue_to_id[dst]) for src, dst in residue_contacts]

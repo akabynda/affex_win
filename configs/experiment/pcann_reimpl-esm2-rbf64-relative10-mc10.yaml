@@ -1,6 +1,6 @@
 # @package _global_
-# Canonical PCANN/ESM-2 baseline with a 64-component Gaussian radial-basis
-# expansion over 0..50 A, covering 99.92% of train C-alpha kNN edges.
+# Classic C-alpha PCANN with a Gaussian distance distribution whose standard
+# deviation is 10% of each edge distance.
 
 defaults:
   - _self_
@@ -23,5 +23,6 @@ lightning:
     distance_rbf_num_gaussians: 64
     distance_rbf_start: 0.0
     distance_rbf_stop: 50.0
+    distance_rbf_relative_sigma_fraction: 0.10
     num_layers: 2
     use_foldx: false

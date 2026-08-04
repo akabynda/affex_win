@@ -1,0 +1,3 @@
+coordinate_mode,source_csv,interface_contact_radius_angstrom,knn_k,graphs,edges,min_angstrom,p01_angstrom,p05_angstrom,p25_angstrom,median_angstrom,p75_angstrom,p95_angstrom,p99_angstrom,max_angstrom,fraction_gt_5A,fraction_gt_10A,fraction_gt_20A,fraction_gt_30A,fraction_gt_40A,fraction_gt_50A
+ca,data/train/pcann-plus-trainval.csv,5.0,50,1266,1456570,3.205651,5.556217,7.494772,11.325050,15.284461,20.164354,28.111160,35.425430,75.935883,0.99581206,0.83354729,0.25712875,0.03315872,0.00385426,0.00078266
+heavy_atom_centroid,data/train/pcann-plus-trainval.csv,5.0,50,1266,1457702,3.136376,5.343885,6.834849,10.925000,15.028987,19.931894,27.893742,35.281918,75.097748,0.99499077,0.80576825,0.24707656,0.03178427,0.00378815,0.00076696

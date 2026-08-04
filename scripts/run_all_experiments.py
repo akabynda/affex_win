@@ -52,8 +52,28 @@ class Experiment:
 
 EXPERIMENTS = (
     Experiment("pcann_reimpl-mc10", "GPU-pcann-42", "pcann"),
-    Experiment("pcann_reimpl-rbf32-mc10", "GPU-rbf32-r05-42", "pcann_esm2_rbf32"),
-    Experiment("pcann_reimpl-rbf64-mc10", "GPU-rbf64-r05-42", "pcann_esm2_rbf64"),
+    Experiment("pcann_reimpl-rbf32-mc10", "GPU-rbf32-r050-v2-42", "pcann_esm2_rbf32"),
+    Experiment("pcann_reimpl-rbf64-mc10", "GPU-rbf64-r050-v2-42", "pcann_esm2_rbf64"),
+    Experiment(
+        "pcann_reimpl-esm2-rbf64-relative10-mc10",
+        "GPU-pcann_esm2_rbf64_relative10-42",
+        "pcann_esm2_rbf64_relative10",
+    ),
+    Experiment(
+        "pcann_reimpl-esm2-centroid-mc10",
+        "GPU-pcann_esm2_centroid-42",
+        "pcann_esm2_centroid",
+    ),
+    Experiment(
+        "pcann_reimpl-esm2-centroid-rbf64-mc10",
+        "GPU-pcann_esm2_centroid_rbf64-42",
+        "pcann_esm2_centroid_rbf64",
+    ),
+    Experiment(
+        "pcann_reimpl-esm2-centroid-rbf64-relative10-mc10",
+        "GPU-pcann_esm2_centroid_rbf64_relative10-42",
+        "pcann_esm2_centroid_rbf64_relative10",
+    ),
     Experiment(
         "pcann_reimpl-esm2-no-edge-features-mc10",
         "GPU-pcann_esm2_no_edge_features-42",
@@ -79,7 +99,7 @@ EXPERIMENTS = (
     ),
     Experiment(
         "pcann_reimpl-esm2-paired-linker-all-boundaries-rbf64-mc10",
-        "GPU-esm2_paired_linker_distance_gggs_all_boundaries_rbf64-42",
+        "GPU-esm2_paired_linker_distance_gggs_all_boundaries_rbf64-r050-v2-42",
         "esm2_paired_linker_distance_gggs_all_boundaries_rbf64",
     ),
     Experiment(
@@ -126,6 +146,10 @@ PREPROCESSING_STAGES_BY_APPROACH = {
     "pcann": {"extract/esm2_per_chain"},
     "pcann_esm2_rbf32": {"extract/esm2_per_chain"},
     "pcann_esm2_rbf64": {"extract/esm2_per_chain"},
+    "pcann_esm2_rbf64_relative10": {"extract/esm2_per_chain"},
+    "pcann_esm2_centroid": {"extract/esm2_per_chain"},
+    "pcann_esm2_centroid_rbf64": {"extract/esm2_per_chain"},
+    "pcann_esm2_centroid_rbf64_relative10": {"extract/esm2_per_chain"},
     "pcann_esm2_no_edge_features": {"extract/esm2_per_chain"},
     "pcann_esm3": {"extract/esm3_per_chain"},
     "plm_interact": {"extract/plm_interact"},
@@ -503,6 +527,17 @@ def summarize(python: str) -> None:
             "predictions_*.csv",
         ],
         "summary/membrane_errors",
+    )
+    run(
+        [
+            python,
+            "scripts/analyze_edge_distances.py",
+            "--workers",
+            "0",
+            "--output",
+            "data/analysis/edge_distance_distribution.csv",
+        ],
+        "summary/edge_distance_distribution",
     )
 
 
